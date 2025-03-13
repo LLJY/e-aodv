@@ -73,35 +73,8 @@ class EAODVProtocol:
         # Initialize or use provided sensor registry
         if sensor_registry is None:
             self.sensor_registry = SensorRegistry()
-
-            # Register default sensors based on capabilities
-            if self.capabilities.get("temperature", False):
-                try:
-                    cpu_temp_sensor = CPUTemperatureSensor(enabled=True)
-                    self.sensor_registry.register_sensor(cpu_temp_sensor)
-                except Exception as e:
-                    logger.warning(f"Failed to initialize temperature sensor: {e}")
-                    # Remove the capability if we can't initialize the sensor
-                    self.capabilities.pop("temperature", None)
-
-            # Initialize other sensors based on capabilities
-            if self.capabilities.get("humidity", False):
-                try:
-                    from sensors.humidity import HumiditySensor
-                    humidity_sensor = HumiditySensor(enabled=True, simulate=True)
-                    self.sensor_registry.register_sensor(humidity_sensor)
-                except Exception as e:
-                    logger.warning(f"Failed to initialize humidity sensor: {e}")
-                    self.capabilities.pop("humidity", None)
-
-            if self.capabilities.get("motion", False):
-                try:
-                    from sensors.motion import MotionSensor
-                    motion_sensor = MotionSensor(enabled=True, simulate=True)
-                    self.sensor_registry.register_sensor(motion_sensor)
-                except Exception as e:
-                    logger.warning(f"Failed to initialize motion sensor: {e}")
-                    self.capabilities.pop("motion", None)
+            # Initialize sensors based on declared capabilities
+            self._init_sensors_from_capabilities()
         else:
             self.sensor_registry = sensor_registry
 
@@ -160,6 +133,38 @@ class EAODVProtocol:
 
         # Start background tasks
         self._init_background_tasks()
+
+    def _init_sensors_from_capabilities(self):
+        """Initialize sensors based on declared capabilities"""
+        # Map of capability name to sensor class name and module
+        sensor_mapping = {
+            "temperature": ("CPUTemperatureSensor", "sensors.cpu_temperature"),
+            "humidity": ("HumiditySensor", "sensors.humidity"),
+            "motion": ("MotionSensor", "sensors.motion"),
+            "led": ("LEDSensor", "sensors.led"),
+            "motor": ("MotorSensor", "sensors.motor"),
+            "display": ("DisplaySensor", "sensors.display"),
+        }
+
+        # Initialize each sensor based on capabilities
+        for capability, (class_name, module_path) in sensor_mapping.items():
+            if self.capabilities.get(capability, False):
+                try:
+                    # Import the module dynamically
+                    module = __import__(module_path, fromlist=[class_name])
+                    # Get the sensor class
+                    sensor_class = getattr(module, class_name)
+                    # Instantiate the sensor
+                    sensor = sensor_class(enabled=True, simulate=True)
+                    # Register it
+                    self.sensor_registry.register_sensor(sensor)
+                    logger.info(f"Initialized {capability} sensor")
+                except ImportError:
+                    logger.warning(f"Could not import {module_path}.{class_name}, skipping {capability}")
+                    self.capabilities.pop(capability, None)
+                except Exception as e:
+                    logger.warning(f"Failed to initialize {capability} sensor: {e}")
+                    self.capabilities.pop(capability, None)
 
     def _init_background_tasks(self):
         """Initialize background maintenance tasks"""
@@ -1342,7 +1347,7 @@ class EAODVProtocol:
             e_rrep = E_RREP.from_erreq(e_rreq)
             e_rrep.operation_type = OperationType.WRITE.value
 
-            # Get neighbors
+            # Get neighbors and prepare the reply
             with self.state_lock:
                 neighbor_macs = [n.bt_mac_address for n in self.aodv_state.neighbours]
 
@@ -1361,30 +1366,65 @@ class EAODVProtocol:
             write_params = e_rreq.query_params
             response_data = {"status": "ok", "updated_keys": []}
 
-            # Here you would handle specific write operations based on the node's capabilities
-            # For demonstration, we'll just log the write parameters
+            # Log the incoming request
             logger.info(f"Received write request: {write_params}")
 
-            # Example: If the write includes motor control, and the node has motor capability
-            if "motor" in write_params and "motor" in self.capabilities and self.capabilities["motor"]:
-                motor_value = write_params["motor"]
-                logger.info(f"Setting motor to {motor_value}")
-                # In a real implementation, you would control the motor here
-                response_data["updated_keys"].append("motor")
+            # Process each parameter
+            for param_name, param_value in write_params.items():
+                # Check if this parameter corresponds directly to a sensor
+                sensor = self.sensor_registry.get_sensor(param_name)
+                if sensor and sensor.writable and sensor.enabled:
+                    # Direct sensor write using our sensor registry
+                    if self.sensor_registry.write_sensor(param_name, param_value):
+                        response_data["updated_keys"].append(param_name)
+                        logger.info(f"Wrote {param_value} to sensor {param_name}")
+                    else:
+                        logger.error(f"Failed to write {param_value} to sensor {param_name}")
+                    continue
 
-            # Example: If the write includes LED control
-            if "led" in write_params and "led" in self.capabilities and self.capabilities["led"]:
-                led_value = write_params["led"]
-                logger.info(f"Setting LED to {led_value}")
-                # In a real implementation, you would control the LED here
-                response_data["updated_keys"].append("led")
+                # Handle legacy named parameters (backwards compatibility)
+                if param_name == "motor":
+                    sensor = self.sensor_registry.get_sensor("motor")
+                    if sensor and sensor.writable and sensor.enabled:
+                        if self.sensor_registry.write_sensor("motor", param_value):
+                            response_data["updated_keys"].append("motor")
+                            logger.info(f"Set motor to {param_value}")
+                        else:
+                            logger.error(f"Failed to set motor to {param_value}")
+                    else:
+                        logger.warning("Motor write requested but no writable motor sensor available")
 
-            # Example: If the write includes display message
-            if "display" in write_params and "display" in self.capabilities and self.capabilities["display"]:
-                display_message = write_params["display"]
-                logger.info(f"Setting display message to: {display_message}")
-                # In a real implementation, you would update the display here
-                response_data["updated_keys"].append("display")
+                elif param_name == "led":
+                    sensor = self.sensor_registry.get_sensor("led")
+                    if sensor and sensor.writable and sensor.enabled:
+                        if self.sensor_registry.write_sensor("led", param_value):
+                            response_data["updated_keys"].append("led")
+                            logger.info(f"Set LED to {param_value}")
+                        else:
+                            logger.error(f"Failed to set LED to {param_value}")
+                    else:
+                        logger.warning("LED write requested but no writable LED sensor available")
+
+                elif param_name == "display":
+                    sensor = self.sensor_registry.get_sensor("display")
+                    if sensor and sensor.writable and sensor.enabled:
+                        if self.sensor_registry.write_sensor("display", param_value):
+                            response_data["updated_keys"].append("display")
+                            logger.info(f"Set display message to: {param_value}")
+                        else:
+                            logger.error(f"Failed to set display message to: {param_value}")
+                    else:
+                        # Legacy support if display is in capabilities but not a sensor
+                        if "display" in self.capabilities and self.capabilities["display"]:
+                            logger.info(f"Legacy display write: {param_value}")
+                            response_data["updated_keys"].append("display")
+                        else:
+                            logger.warning("Display write requested but not available")
+
+            # Update response status based on success
+            if not response_data["updated_keys"]:
+                response_data["status"] = "error"
+                response_data["message"] = "No valid write parameters found"
 
             # Set response data
             e_rrep.response_data = response_data
@@ -1412,6 +1452,8 @@ class EAODVProtocol:
 
         except Exception as e:
             logger.error(f"Error handling write request: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def _handle_config_request(self, e_rreq: E_RREQ, sender_address: str):
         """

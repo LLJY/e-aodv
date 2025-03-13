@@ -14,6 +14,7 @@ class CPUTemperatureSensor(Sensor):
         """Initialize the CPU temperature sensor"""
         super().__init__(name="temperature", enabled=enabled)
         self.simulate = simulate
+        self.writable = False
         
     def read(self) -> float:
         """Read the current CPU temperature"""
