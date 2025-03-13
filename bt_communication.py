@@ -190,13 +190,14 @@ class BTCommunication:
     """Bluetooth Classic Communication for E-AODV"""
 
     def __init__(self, device_name: str = "EAODV-Node", message_handler: Callable = None,
-                 disconnection_handler: Callable = None):
+                 disconnection_handler: Callable = None, hello_message_generator: Callable = None):
         """Initialize the Bluetooth communication handler"""
         self.device_name = device_name
         self.message_handler = message_handler or self._default_message_handler
 
         self.message_handler = message_handler or self._default_message_handler
         self.disconnection_handler = disconnection_handler or self._default_disconnection_handler
+        self.hello_message_generator = hello_message_generator
 
         # Create Bluez command runner
         self.bluez = BluezCommandRunner()
@@ -392,25 +393,35 @@ class BTCommunication:
         # First just check if socket is still alive
         if not self._is_socket_connected(sock):
             logger.error(f"Connection to {addr} failed socket check")
-            self._remove_connection(addr)
+            self._remove_connection(addr, "Socket check failed")
             return
 
         logger.info(f"Connection to {addr} is stable, proceeding")
 
         # Try to send hello message
         try:
-            hello_msg = {
-                "type": "hello",
-                "source": self.device_name,
-                "timestamp": time.time()
-            }
+            # Use the protocol's hello message generator if available
+            if self.hello_message_generator:
+                hello_msg = self.hello_message_generator()
+            else:
+                # Fallback to a basic hello (should never happen with proper setup)
+                hello_msg = {
+                    "type": 4,  # RequestType.R_HELLO.value
+                    "node_id": self.device_name,
+                    "bt_mac_address": self.local_bt_address or "",
+                    "timestamp": str(time.time()),
+                    "initial_neighbors": [],
+                    "include_sensor_data": False,
+                    "hello_interval": 30
+                }
+
             hello_bytes = (json.dumps(hello_msg) + "\n").encode("utf-8")
             logger.info(f"Sending hello message to {addr}")
             sock.send(hello_bytes)
             logger.info(f"Successfully sent hello to {addr}")
         except Exception as e:
             logger.error(f"Failed to send hello message to {addr}: {e}")
-            self._remove_connection(addr)
+            self._remove_connection(addr, f"Hello message failed: {e}")
             return
 
         # Main receive loop

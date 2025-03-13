@@ -115,7 +115,8 @@ class EAODVProtocol:
         self.bt_comm = BTCommunication(
             device_name=self.device_name,
             message_handler=self._handle_message,
-            disconnection_handler=self._handle_disconnection
+            disconnection_handler=self._handle_disconnection,
+            hello_message_generator=self._create_hello_message
         )
 
         # Get local MAC address
@@ -337,50 +338,49 @@ class EAODVProtocol:
                 logger.error(f"Error in route maintenance task: {e}")
                 time.sleep(5)
 
+    def _create_hello_message(self) -> Dict[str, Any]:
+        """
+        Create a standardized R_HELLO message.
+
+        Returns:
+            Dictionary containing the R_HELLO message data
+        """
+        # Get current neighbor MACs
+        with self.state_lock:
+            neighbor_macs = [n.bt_mac_address for n in self.aodv_state.neighbours]
+
+        # Get updated capabilities from sensor registry
+        capability_data = self.sensor_registry.get_all_capabilities()
+
+        # Check if we should include sensor data (based on network config)
+        include_sensor_data = self.network_config.include_sensor_data
+
+        # Create hello message
+        hello_msg = {
+            "type": RequestType.R_HELLO.value,
+            "node_id": self.node_id,
+            "bt_mac_address": self.mac_address,
+            "timestamp": str(time.time()),
+            "initial_neighbors": neighbor_macs,
+            "capabilities": capability_data,
+            "hello_interval": self.network_config.hello_interval,
+            "include_sensor_data": include_sensor_data
+        }
+
+        # Add sensor data if configured to do so
+        if include_sensor_data:
+            # Read all sensor values
+            sensor_data = self.sensor_registry.read_all_sensors()
+            if sensor_data:
+                hello_msg["sensor_data"] = sensor_data
+
+        return hello_msg
+
     def _broadcast_hello(self):
         """Broadcast a hello message to neighbors"""
         try:
-            # Get current neighbor MACs
-            with self.state_lock:
-                neighbor_macs = [n.bt_mac_address for n in self.aodv_state.neighbours]
-
-            # Get updated capabilities from sensor registry
-            capability_data = self.sensor_registry.get_all_capabilities()
-
-            # Check if we should include sensor data (based on network config)
-            include_sensor_data = self.network_config.include_sensor_data
-
-            # Get sensor data if configured to include it
-            sensor_data = {}
-            if include_sensor_data:
-                # Read all sensor values
-                sensor_data = self.sensor_registry.read_all_sensors()
-                logger.debug(f"Including sensor data in hello: {sensor_data}")
-
-            # Create hello message
-            hello_msg = R_HELLO()
-            hello_msg.node_id = self.node_id
-            hello_msg.bt_mac_address = self.mac_address
-            hello_msg.timestamp = str(time.time())
-            hello_msg.initial_neighbors = neighbor_macs
-            hello_msg.include_sensor_data = include_sensor_data
-            hello_msg.hello_interval = self.network_config.hello_interval
-
-            # Convert to JSON with capability data
-            hello_json = {
-                "type": RequestType.R_HELLO.value,
-                "node_id": hello_msg.node_id,
-                "bt_mac_address": hello_msg.bt_mac_address,
-                "timestamp": hello_msg.timestamp,
-                "initial_neighbors": hello_msg.initial_neighbors,
-                "capabilities": capability_data,
-                "hello_interval": hello_msg.hello_interval,
-                "include_sensor_data": include_sensor_data
-            }
-
-            # Add sensor data if configured to do so
-            if include_sensor_data and sensor_data:
-                hello_json["sensor_data"] = sensor_data
+            # Create hello message using the shared function
+            hello_json = self._create_hello_message()
 
             # Broadcast to all connected devices
             with self.state_lock:
