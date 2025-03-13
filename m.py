@@ -15,12 +15,25 @@ import os
 import curses
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+import tempfile
+import webbrowser
 from sensors.sensor_registry import SensorRegistry
 from sensors.sensor import Sensor
 from sensors.cpu_temperature import CPUTemperatureSensor
 
 # Import EAODV protocol
 from eaodv_protocol import EAODVProtocol, OperationType
+
+# Import visualization libraries
+try:
+    import networkx as nx
+    import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.use('Agg')  # Non-interactive backend
+    HAS_VISUALIZATION = True
+except ImportError:
+    HAS_VISUALIZATION = False
+    print("Warning: networkx or matplotlib not installed. Network visualization will be disabled.")
 
 # Configure logging
 log_format = "%(asctime)s [%(levelname)s] %(message)s"
@@ -119,23 +132,23 @@ class EAODVDemo:
         ui_handler = UILogHandler(self)
         ui_handler.setFormatter(log_formatter)
         logger.addHandler(ui_handler)
-    
+
     def run(self):
         """
         Run the demo with a user-friendly terminal interface.
         """
         logger.info("Starting E-AODV demo")
-        
+
         # Menu loop
         while True:
             self._clear_screen()
             self._print_header()
             self._print_menu()
             self._print_log_window()
-            
+
             try:
                 choice = input("\nEnter choice: ")
-                
+
                 if choice == "1":
                     self.discover_nodes()
                 elif choice == "2":
@@ -157,6 +170,8 @@ class EAODVDemo:
                 elif choice == "10":
                     self.configure_network()
                 elif choice == "11":
+                    self.visualize_network()  # New visualization option
+                elif choice == "12":  # Updated quit option number
                     self.quit()
                     break
                 else:
@@ -482,57 +497,146 @@ class EAODVDemo:
             print(f"   Via: {hop_str}")
             
         input("\nPress Enter to continue...")
-    
+
     def query_node(self):
         """
-        Query data from a remote node.
+        Query data from a remote node with enhanced node selection.
         """
         self._clear_screen()
         print("\n=== Query Node Data ===")
-        
-        # Get destination node
-        dest_mac = input("\nEnter destination MAC address: ")
-        
+
+        # First determine if we want to select from connected nodes or enter a MAC address
+        print("\nChoose node selection method:")
+        print("1. Select from connected nodes")
+        print("2. Enter MAC address manually")
+
+        selection_method = input("\nEnter choice (1-2): ")
+
+        dest_mac = None
+
+        if selection_method == "1":
+            # Show connected nodes and let user choose
+            neighbors = self.eaodv.get_neighbors()
+
+            if not neighbors:
+                print("No connected nodes available.")
+                input("\nPress Enter to continue...")
+                return
+
+            print("\nConnected nodes:")
+            for i, neighbor in enumerate(neighbors):
+                node_id = neighbor.get("node_id") or "Unknown"
+                mac = neighbor.get("bt_mac_address", "Unknown")
+                # Show capabilities if available
+                caps = []
+                if "capabilities" in neighbor:
+                    for cap, enabled in neighbor["capabilities"].items():
+                        if cap != "temperature_value" and not cap.endswith("_writable") and enabled:
+                            caps.append(cap)
+                    cap_str = f" - Capabilities: {', '.join(caps)}" if caps else ""
+                    print(f"{i + 1}. {node_id} ({mac}){cap_str}")
+                else:
+                    print(f"{i + 1}. {node_id} ({mac})")
+
+            try:
+                choice = int(input("\nSelect node (number): "))
+                if choice < 1 or choice > len(neighbors):
+                    print("Invalid selection.")
+                    input("\nPress Enter to continue...")
+                    return
+
+                dest_mac = neighbors[choice - 1]["bt_mac_address"]
+                # Get node_id for better logging
+                selected_node_id = neighbors[choice - 1].get("node_id", "")
+                print(f"Selected node: {selected_node_id} ({dest_mac})")
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+                input("\nPress Enter to continue...")
+                return
+        else:
+            # Manual MAC address entry
+            dest_mac = input("\nEnter destination MAC address: ")
+
         if not dest_mac:
-            print("MAC address is required.")
+            print("No destination selected.")
             input("\nPress Enter to continue...")
             return
-        
+
+        # Query for capabilities first to show appropriate options
+        print(f"Querying capabilities of {dest_mac}...")
+
+        # Set up query callback
+        caps_event = threading.Event()
+        caps_result = {"success": False, "data": None}
+
+        def caps_callback(success, data):
+            caps_result["success"] = success
+            caps_result["data"] = data
+            caps_event.set()
+
+        # First query capabilities
+        self.eaodv.query_node(
+            dest_mac=dest_mac,
+            query_type="capabilities",
+            callback=caps_callback
+        )
+
+        # Wait for capabilities result with timeout
+        caps_event.wait(timeout=10)
+
         # Show query options
         print("\nQuery types:")
-        print("1. Temperature")
-        print("2. Humidity")
-        print("3. Node capabilities")
-        print("4. Network configuration")
-        print("5. Neighbor list")
-        
-        query_choice = input("\nSelect query type (1-5): ")
-        
-        query_type = None
-        if query_choice == "1":
-            query_type = "temperature"
-        elif query_choice == "2":
-            query_type = "humidity"
-        elif query_choice == "3":
-            query_type = "capabilities"
-        elif query_choice == "4":
-            query_type = "network_config"
-        elif query_choice == "5":
-            query_type = "neighbors"
-        else:
-            print("Invalid query type.")
+        query_options = []
+        option_num = 1
+
+        # Add available sensors based on capabilities
+        if caps_result["success"] and "capabilities" in caps_result["data"]:
+            caps = caps_result["data"]["capabilities"]
+            for cap, enabled in caps.items():
+                # Skip internal or disabled capabilities
+                if cap.endswith("_writable") or cap == "temperature_value" or not enabled:
+                    continue
+
+                # Add sensor to query options
+                print(f"{option_num}. {cap.title()}")
+                query_options.append(f"sensor:{cap}")
+                option_num += 1
+
+        # Add standard query types
+        print(f"{option_num}. Node Capabilities")
+        query_options.append("capabilities")
+        option_num += 1
+
+        print(f"{option_num}. Network Configuration")
+        query_options.append("network_config")
+        option_num += 1
+
+        print(f"{option_num}. Neighbor List")
+        query_options.append("neighbors")
+        option_num += 1
+
+        try:
+            query_choice = int(input("\nSelect query type (number): "))
+            if query_choice < 1 or query_choice > len(query_options):
+                print("Invalid query type.")
+                input("\nPress Enter to continue...")
+                return
+
+            query_type = query_options[query_choice - 1]
+        except ValueError:
+            print("Invalid input. Please enter a number.")
             input("\nPress Enter to continue...")
             return
-        
+
         # Set up query callback
         query_event = threading.Event()
         query_result = {"success": False, "data": None}
-        
+
         def query_callback(success, data):
             query_result["success"] = success
             query_result["data"] = data
             query_event.set()
-        
+
         # Send query
         print(f"Querying {query_type} from {dest_mac}...")
         self.eaodv.query_node(
@@ -540,42 +644,55 @@ class EAODVDemo:
             query_type=query_type,
             callback=query_callback
         )
-        
+
         # Wait for result with timeout
         query_event.wait(timeout=15)
-        
+
+        # Process the query result
         if query_result["success"]:
             print("\nQuery successful!")
             print("Response data:")
-            
+
             # Format response for different query types
             data = query_result["data"]
-            if query_type == "temperature":
-                if "temperature" in data:
-                    print(f"Temperature: {data['temperature']}°C")
+
+            if query_type.startswith("sensor:"):
+                # Extract the actual sensor name from the query type
+                sensor_name = query_type.split(":", 1)[1]
+
+                if sensor_name in data:
+                    print(f"{sensor_name.title()}: {data[sensor_name]}")
                 else:
-                    print("Temperature data not available")
-            elif query_type == "humidity":
-                if "humidity" in data:
-                    print(f"Humidity: {data['humidity']}%")
-                else:
-                    print("Humidity data not available")
+                    print(f"{sensor_name.title()} data not available")
+
             elif query_type == "capabilities":
                 if "capabilities" in data:
                     caps = data["capabilities"]
+                    # First show sensor values
+                    for cap, value in caps.items():
+                        if cap.endswith("_value"):
+                            sensor_name = cap.replace("_value", "")
+                            print(f"- {sensor_name.title()}: {value}")
+
+                    # Then show enabled/disabled sensors
                     for cap, enabled in caps.items():
-                        if cap != "temperature_value":
+                        if not cap.endswith("_value") and not cap.endswith("_writable"):
                             status = "Enabled" if enabled else "Disabled"
-                            print(f"- {cap}: {status}")
-                    if "temperature_value" in caps:
-                        print(f"- Temperature: {caps['temperature_value']}°C")
+                            print(f"- {cap.title()}: {status}")
+
+                    # Finally show writable capabilities
+                    for cap, enabled in caps.items():
+                        if cap.endswith("_writable") and enabled:
+                            sensor_name = cap.replace("_writable", "")
+                            print(f"- {sensor_name.title()}: Writable")
                 else:
                     print("Capabilities data not available")
+
             elif query_type == "network_config":
-                if "hello_interval" in data:
-                    print(f"Hello Interval: {data['hello_interval']} seconds")
-                if "include_sensor_data" in data:
-                    print(f"Include Sensor Data: {'Yes' if data['include_sensor_data'] else 'No'}")
+                for key, value in data.items():
+                    if key != "status" and key != "message":
+                        print(f"- {key}: {value}")
+
             elif query_type == "neighbors":
                 if "neighbors" in data:
                     neighbors = data["neighbors"]
@@ -583,78 +700,207 @@ class EAODVDemo:
                         for i, neighbor in enumerate(neighbors):
                             node_id = neighbor.get("node_id", "Unknown")
                             mac = neighbor.get("bt_mac_address", "Unknown")
-                            print(f"{i+1}. {node_id} ({mac})")
+                            print(f"{i + 1}. {node_id} ({mac})")
                     else:
                         print("No neighbors reported")
                 else:
                     print("Neighbor data not available")
             else:
-                print(json.dumps(data, indent=2))
+                # Generic handler for any other type of data
+                for key, value in data.items():
+                    if key != "status" and key != "message":
+                        print(f"- {key}: {value}")
         else:
             print("Query failed.")
             if "message" in query_result.get("data", {}):
                 print(f"Error: {query_result['data']['message']}")
-            
+
         input("\nPress Enter to continue...")
-    
+
     def write_to_node(self):
         """
-        Write data to a remote node.
+        Write data to a remote node with enhanced sensor support.
         """
         self._clear_screen()
         print("\n=== Write to Node ===")
-        
-        # Get destination node
-        dest_mac = input("\nEnter destination MAC address: ")
-        
+
+        # First determine if we want to select from connected nodes or enter a MAC address
+        print("\nChoose node selection method:")
+        print("1. Select from connected nodes")
+        print("2. Enter MAC address manually")
+
+        selection_method = input("\nEnter choice (1-2): ")
+
+        dest_mac = None
+
+        if selection_method == "1":
+            # Show connected nodes and let user choose
+            neighbors = self.eaodv.get_neighbors()
+
+            if not neighbors:
+                print("No connected nodes available.")
+                input("\nPress Enter to continue...")
+                return
+
+            print("\nConnected nodes:")
+            for i, neighbor in enumerate(neighbors):
+                node_id = neighbor.get("node_id") or "Unknown"
+                mac = neighbor.get("bt_mac_address", "Unknown")
+                print(f"{i + 1}. {node_id} ({mac})")
+
+            try:
+                choice = int(input("\nSelect node (number): "))
+                if choice < 1 or choice > len(neighbors):
+                    print("Invalid selection.")
+                    input("\nPress Enter to continue...")
+                    return
+
+                dest_mac = neighbors[choice - 1]["bt_mac_address"]
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+                input("\nPress Enter to continue...")
+                return
+        else:
+            # Manual MAC address entry
+            dest_mac = input("\nEnter destination MAC address: ")
+
         if not dest_mac:
-            print("MAC address is required.")
+            print("No destination selected.")
             input("\nPress Enter to continue...")
             return
-        
+
+        # FIRST: Query the node's capabilities to see what's writable
+        print(f"\nQuerying {dest_mac} capabilities...")
+
+        # Set up query callback
+        query_event = threading.Event()
+        query_result = {"success": False, "data": None}
+
+        def query_callback(success, data):
+            query_result["success"] = success
+            query_result["data"] = data
+            query_event.set()
+
+        # First query capabilities to get writable sensors
+        self.eaodv.query_node(
+            dest_mac=dest_mac,
+            query_type="capabilities",
+            callback=query_callback
+        )
+
+        # Wait for result with timeout
+        query_event.wait(timeout=10)
+
+        # Find writable sensors
+        writable_sensors = []
+        if query_result["success"] and "capabilities" in query_result["data"]:
+            caps = query_result["data"]["capabilities"]
+            # Look for _writable suffix in capabilities
+            for cap, enabled in caps.items():
+                if cap.endswith("_writable") and enabled:
+                    sensor_name = cap.replace("_writable", "")
+                    writable_sensors.append(sensor_name)
+
+        # Add traditional writable capabilities for backward compatibility
+        traditional_writables = ["led", "motor", "display"]
+
         # Show write options
-        print("\nWrite options:")
-        print("1. Set LED state")
-        print("2. Set motor speed")
-        print("3. Set display message")
-        
-        write_choice = input("\nSelect write option (1-3): ")
-        
+        print("\nAvailable write options:")
+        option_num = 1
+        sensor_options = []
+
+        # First show all detected writable sensors
+        for sensor in writable_sensors:
+            if sensor not in traditional_writables:  # Avoid duplicates
+                print(f"{option_num}. {sensor.title()} Sensor")
+                sensor_options.append(sensor)
+                option_num += 1
+
+        # Then add traditional options if they aren't already included
+        if "led" not in writable_sensors:
+            print(f"{option_num}. LED")
+            sensor_options.append("led")
+            option_num += 1
+
+        if "motor" not in writable_sensors:
+            print(f"{option_num}. Motor")
+            sensor_options.append("motor")
+            option_num += 1
+
+        if "display" not in writable_sensors:
+            print(f"{option_num}. Display")
+            sensor_options.append("display")
+            option_num += 1
+
+        if not sensor_options:
+            print("No writable sensors or actuators found on the target node.")
+            input("\nPress Enter to continue...")
+            return
+
+        try:
+            write_choice = int(input("\nSelect option (number): "))
+            if write_choice < 1 or write_choice > len(sensor_options):
+                print("Invalid selection.")
+                input("\nPress Enter to continue...")
+                return
+
+            selected_sensor = sensor_options[write_choice - 1]
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            input("\nPress Enter to continue...")
+            return
+
+        # Handle value input based on sensor type
         write_data = {}
-        if write_choice == "1":
+
+        if selected_sensor == "led":
             led_state = input("Enter LED state (on/off): ").lower()
             if led_state not in ["on", "off"]:
                 print("Invalid LED state. Must be 'on' or 'off'.")
                 input("\nPress Enter to continue...")
                 return
-            write_data["led"] = (led_state == "on")
-        elif write_choice == "2":
+            write_data[selected_sensor] = (led_state == "on")
+        elif selected_sensor == "motor":
             try:
                 motor_speed = int(input("Enter motor speed (0-100): "))
                 if motor_speed < 0 or motor_speed > 100:
                     raise ValueError("Motor speed must be between 0 and 100")
-                write_data["motor"] = motor_speed
+                write_data[selected_sensor] = motor_speed
             except ValueError as e:
                 print(f"Invalid motor speed: {e}")
                 input("\nPress Enter to continue...")
                 return
-        elif write_choice == "3":
+        elif selected_sensor == "display":
             display_message = input("Enter display message: ")
-            write_data["display"] = display_message
+            write_data[selected_sensor] = display_message
         else:
-            print("Invalid write option.")
-            input("\nPress Enter to continue...")
-            return
-        
+            # Generic sensor handling for unknown types
+            value = input(f"Enter value for {selected_sensor}: ")
+
+            # Try to convert to appropriate type
+            try:
+                # First try to convert to number if it looks like one
+                if value.isdigit():
+                    value = int(value)
+                elif value.replace('.', '', 1).isdigit() and value.count('.') <= 1:
+                    value = float(value)
+                elif value.lower() in ['true', 'false', 'on', 'off', 'yes', 'no']:
+                    value = value.lower() in ['true', 'on', 'yes']
+            except:
+                # If conversion fails, keep as string
+                pass
+
+            write_data[selected_sensor] = value
+
         # Set up write callback
         write_event = threading.Event()
         write_result = {"success": False, "data": None}
-        
+
         def write_callback(success, data):
             write_result["success"] = success
             write_result["data"] = data
             write_event.set()
-        
+
         # Send write request
         print(f"Writing data to {dest_mac}...")
         self.eaodv.write_to_node(
@@ -662,10 +908,10 @@ class EAODVDemo:
             write_data=write_data,
             callback=write_callback
         )
-        
+
         # Wait for result with timeout
         write_event.wait(timeout=15)
-        
+
         if write_result["success"]:
             print("\nWrite successful!")
             data = write_result["data"]
@@ -676,7 +922,7 @@ class EAODVDemo:
             print("Write failed.")
             if "message" in write_result.get("data", {}):
                 print(f"Error: {write_result['data']['message']}")
-            
+
         input("\nPress Enter to continue...")
     
     def configure_network(self):
@@ -820,6 +1066,211 @@ class EAODVDemo:
         logger.handlers = self.original_handlers
         
         print("Goodbye!")
+
+    def visualize_network(self):
+        """
+        Generate and display a network topology visualization as PNG.
+        """
+        if not HAS_VISUALIZATION:
+            self._clear_screen()
+            print("\n=== Network Visualization ===")
+            print("\nThis feature requires networkx and matplotlib libraries.")
+            print("Please install them using: pip install networkx matplotlib")
+            input("\nPress Enter to continue...")
+            return
+
+        self._clear_screen()
+        print("\n=== Network Visualization ===")
+        print("Generating network topology visualization...")
+
+        # Get the network topology
+        topology = self.eaodv.get_network_topology()
+
+        if not topology["nodes"]:
+            print("No network topology data available.")
+            input("\nPress Enter to continue...")
+            return
+
+        # Create a networkx graph
+        G = nx.Graph()
+
+        # Add nodes
+        for node in topology["nodes"]:
+            node_id = node.get("id") or node.get("mac", "Unknown")
+            is_local = node.get("is_local", False)
+
+            # Set node attributes
+            attrs = {
+                "mac": node.get("mac", ""),
+                "is_local": is_local
+            }
+
+            # Add the node
+            G.add_node(node_id, **attrs)
+
+        # Add links
+        for link in topology["links"]:
+            source = link.get("source")
+            target = link.get("target")
+
+            # Try to find more descriptive node IDs if available
+            source_id = source
+            target_id = target
+            for node in topology["nodes"]:
+                if node.get("mac") == source:
+                    source_id = node.get("id") or source
+                if node.get("mac") == target:
+                    target_id = node.get("id") or target
+
+            G.add_edge(source_id, target_id)
+
+        # Create the figure
+        plt.figure(figsize=(10, 8))
+
+        # Get positions (layout)
+        pos = nx.spring_layout(G)
+
+        # Draw nodes
+        node_colors = []
+        node_sizes = []
+
+        for node in G.nodes():
+            if G.nodes[node].get("is_local", False):
+                node_colors.append('red')  # Local node is red
+                node_sizes.append(800)  # And larger
+            else:
+                node_colors.append('skyblue')
+                node_sizes.append(500)
+
+        nx.draw_networkx_nodes(G, pos,
+                               node_color=node_colors,
+                               node_size=node_sizes)
+
+        # Draw edges
+        nx.draw_networkx_edges(G, pos, width=2, alpha=0.7, edge_color='gray')
+
+        # Draw labels
+        nx.draw_networkx_labels(G, pos, font_size=10, font_family='sans-serif')
+
+        # Add a title
+        plt.title(f'E-AODV Network Topology - Node: {self.node_id}')
+        plt.axis('off')  # Turn off axis
+
+        # Create a temporary file
+        fd, path = tempfile.mkstemp(suffix='.png')
+        os.close(fd)
+
+        # Save the figure
+        plt.savefig(path, format='png', dpi=150, bbox_inches='tight')
+        plt.close()
+
+        print(f"Visualization saved to: {path}")
+        print("Attempting to open the image...")
+
+        # Try to open the image with the default viewer
+        try:
+            if sys.platform == 'darwin':  # macOS
+                os.system(f"open {path}")
+            elif sys.platform == 'win32':  # Windows
+                os.startfile(path)
+            else:  # Linux
+                os.system(f"xdg-open {path}")
+            print("Image opened in default viewer.")
+        except Exception as e:
+            print(f"Could not open image automatically: {e}")
+            print(f"Please open the file manually: {path}")
+
+        # Also provide HTML output option for more interactivity
+        html_option = input("\nGenerate interactive HTML visualization? (y/n): ")
+        if html_option.lower() == 'y':
+            try:
+                import networkx.drawing.nx_pylab as nx_pylab
+                from networkx.drawing.nx_agraph import graphviz_layout
+                import plotly.graph_objects as go
+                import plotly.offline as pyoff
+
+                # Create HTML visualization
+                html_fd, html_path = tempfile.mkstemp(suffix='.html')
+                os.close(html_fd)
+
+                # Create plotly figure
+                edge_x = []
+                edge_y = []
+                for edge in G.edges():
+                    x0, y0 = pos[edge[0]]
+                    x1, y1 = pos[edge[1]]
+                    edge_x.extend([x0, x1, None])
+                    edge_y.extend([y0, y1, None])
+
+                edge_trace = go.Scatter(
+                    x=edge_x, y=edge_y,
+                    line=dict(width=1.5, color='#888'),
+                    hoverinfo='none',
+                    mode='lines')
+
+                node_x = []
+                node_y = []
+                for node in G.nodes():
+                    x, y = pos[node]
+                    node_x.append(x)
+                    node_y.append(y)
+
+                node_trace = go.Scatter(
+                    x=node_x, y=node_y,
+                    mode='markers+text',
+                    hoverinfo='text',
+                    marker=dict(
+                        showscale=False,
+                        colorscale='YlGnBu',
+                        size=15,
+                        colorbar=dict(
+                            thickness=15,
+                            title='Node Connections',
+                            xanchor='left',
+                            titleside='right'
+                        ),
+                        line_width=2))
+
+                # Add node attributes for hover text
+                node_text = []
+                node_colors = []
+                for node in G.nodes():
+                    node_attrs = G.nodes[node]
+                    hover_text = f"ID: {node}<br>MAC: {node_attrs.get('mac', 'Unknown')}"
+                    node_text.append(hover_text)
+
+                    if node_attrs.get("is_local", False):
+                        node_colors.append('red')
+                    else:
+                        node_colors.append('skyblue')
+
+                node_trace.text = node_text
+                node_trace.marker.color = node_colors
+
+                fig = go.Figure(data=[edge_trace, node_trace],
+                                layout=go.Layout(
+                                    title=f'E-AODV Network Topology - Node: {self.node_id}',
+                                    titlefont_size=16,
+                                    showlegend=False,
+                                    hovermode='closest',
+                                    margin=dict(b=20, l=5, r=5, t=40),
+                                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
+                                )
+
+                # Write to HTML file
+                pyoff.plot(fig, filename=html_path, auto_open=False)
+
+                # Try to open the HTML file in a browser
+                webbrowser.open('file://' + os.path.abspath(html_path))
+
+                print(f"Interactive visualization saved to: {html_path}")
+                print("Opening in web browser...")
+            except ImportError:
+                print("Could not generate interactive visualization.")
+                print("Required libraries: plotly (pip install plotly)")
+
+        input("\nPress Enter to continue...")
 
 
 if __name__ == "__main__":
