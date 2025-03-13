@@ -19,7 +19,7 @@ from sensors.cpu_temperature import CPUTemperatureSensor
 from dataclasses import asdict
 
 # Import Bluetooth communication module
-from bt_communication import BTCommunication, BluezCommandRunner
+from bt_communication import BTCommunication, BluezCommandRunner, MAX_CONNECT_RETRIES
 
 # Import EAODV data models
 from e_aodv_models import (
@@ -114,7 +114,8 @@ class EAODVProtocol:
         # Initialize Bluetooth communication
         self.bt_comm = BTCommunication(
             device_name=self.device_name,
-            message_handler=self._handle_message
+            message_handler=self._handle_message,
+            disconnection_handler=self._handle_disconnection
         )
 
         # Get local MAC address
@@ -265,21 +266,23 @@ class EAODVProtocol:
                         if not already_connected:
                             connect_candidates.append((addr, info["name"]))
 
-                # Try to connect to each candidate
+                # Try to connect to each candidate using shared backoff mechanism
                 for addr, name in connect_candidates:
                     logger.info(f"Auto-connect: Attempting to connect to {name} ({addr})")
-                    success = self.connect_to_neighbor(addr, name)
+                    success = self.bt_comm.connect_to_node_with_backoff(addr, name, max_retries=MAX_CONNECT_RETRIES)
 
                     if success:
                         logger.info(f"Auto-connect: Successfully connected to {name} ({addr})")
                     else:
                         logger.info(f"Auto-connect: Failed to connect to {name} ({addr})")
 
-                    # Short delay between connection attempts
-                    time.sleep(2)
+                    # Short delay between connection attempt sequences
+                    time.sleep(0.5)
 
-                # Wait for the next interval
-                time.sleep(AUTO_CONNECT_INTERVAL + random.uniform(-2, 5))
+                # Wait for the next interval (with some randomization)
+                wait_time = AUTO_CONNECT_INTERVAL + random.uniform(-2, 5)
+                logger.debug(f"Auto-connect: Next connection attempts in {wait_time:.1f}s")
+                time.sleep(wait_time)
 
             except Exception as e:
                 logger.error(f"Error in auto-connect task: {e}")
@@ -476,6 +479,99 @@ class EAODVProtocol:
 
         except Exception as e:
             logger.error(f"Error updating neighbor: {e}")
+
+    def _handle_disconnection(self, addr: str, reason: str):
+        """
+        Handle disconnection events from the BT communication layer.
+
+        Args:
+            addr: MAC address of the disconnected node
+            reason: Reason for disconnection
+        """
+        try:
+            logger.info(f"Handling disconnection from {addr}: {reason}")
+
+            # Check if this is one of our neighbors
+            with self.state_lock:
+                is_neighbor = any(n.bt_mac_address == addr for n in self.aodv_state.neighbours)
+                neighbor = next((n for n in self.aodv_state.neighbours if n.bt_mac_address == addr), None)
+
+            if not is_neighbor:
+                logger.info(f"Disconnected node {addr} was not a neighbor")
+                return
+
+            # Define error strings as lowercase to avoid repeated conversions
+            reconnect_errors = ["connection reset by peer", "broken pipe", "timed out"]
+            # Convert reason to lowercase once
+            reason_lower = reason.lower()
+            # Check if any error strings appear in the lowercase reason
+            should_try_reconnect = any(err in reason_lower for err in reconnect_errors)
+
+            if should_try_reconnect:
+                logger.info(f"Attempting to reconnect to {addr}")
+                node_name = neighbor.node_id if neighbor and neighbor.node_id else f"EAODV-{addr[-5:]}"
+
+                # Try reconnection with backoff
+                for attempt in range(2):  # Only try twice to avoid long delays
+                    time.sleep(1 + attempt)  # Simple backoff
+                    if self.bt_comm.connect_to_node(addr, node_name):
+                        logger.info(f"Successfully reconnected to {addr}")
+                        return
+
+                logger.info(f"Failed to reconnect to {addr} after 2 attempts")
+
+            # Generate E-RERR message
+            e_rerr = E_RERR()
+            node_id = neighbor.node_id if neighbor else ""
+            e_rerr.prepare_error(
+                failed_node_id=node_id,
+                failed_node_mac=addr,
+                originator_id=self.node_id,
+                originator_mac=self.mac_address,
+                reason=reason
+            )
+
+            # Update our own routing table and neighbor list
+            with self.state_lock:
+                # Remove routes that use this node
+                self._remove_routes_through_node(addr)
+
+                # Remove from neighbors list
+                self.aodv_state.neighbours = [n for n in self.aodv_state.neighbours
+                                              if n.bt_mac_address != addr]
+
+                # Remove from neighbor capabilities
+                if addr in self.neighbor_capabilities:
+                    del self.neighbor_capabilities[addr]
+
+            # Broadcast E-RERR to all remaining neighbors
+            error_data = {
+                "type": RequestType.E_RERR.value,
+                "failed_node_id": e_rerr.failed_node_id,
+                "failed_node_mac": e_rerr.failed_node_mac,
+                "originator_id": e_rerr.originator_id,
+                "originator_mac": e_rerr.originator_mac,
+                "timestamp": e_rerr.timestamp,
+                "reason": e_rerr.reason
+            }
+
+            # Get all connected devices and send the error
+            with self.state_lock:
+                connected_devices = list(self.bt_comm.connected_devices.keys())
+
+            for device_addr in connected_devices:
+                try:
+                    self.bt_comm.send_json(device_addr, error_data)
+                    logger.info(f"Sent E-RERR about {addr} to {device_addr}")
+                except Exception as e:
+                    logger.error(f"Failed to send E-RERR to {device_addr}: {e}")
+
+            logger.info(f"Completed disconnection handling for {addr}")
+
+        except Exception as e:
+            logger.error(f"Error handling disconnection: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def _handle_route_request(self, sender_address: str, message_data: Dict[str, Any]):
         """
