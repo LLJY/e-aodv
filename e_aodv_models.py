@@ -6,6 +6,7 @@ from dataclasses import dataclass, asdict, field
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
+
 #
 # === ENUMS & CONSTANTS ===
 #
@@ -15,12 +16,14 @@ class RequestType(Enum):
     E_RERR = 3
     R_HELLO = 4
     R_TOP = 5
-    
+
+
 class OperationType(Enum):
-    ROUTE = 1     # Standard route discovery
-    QUERY = 2     # Query data from a node
-    WRITE = 3     # Write data to a node
-    CONFIG = 4    # Configure network parameters
+    ROUTE = 1  # Standard route discovery
+    QUERY = 2  # Query data from a node
+    WRITE = 3  # Write data to a node
+    CONFIG = 4  # Configure network parameters
+
 
 #
 # === DATA STRUCTURES ===
@@ -35,6 +38,7 @@ class TopologyEntry:
     node_id: Optional[str]
     bt_mac_address: str
     neighbors: List[str]
+
 
 @dataclass
 class E_RREQ:
@@ -58,15 +62,15 @@ class E_RREQ:
     query_params: Dict[str, Any] = field(default_factory=dict)  # Parameters for query/write operations
 
     def __init__(
-        self,
-        src_id: str,
-        src_mac: str,
-        dest_id: str,
-        sequence_number: int,
-        time_to_live: int,
-        dest_mac: Optional[str] = None,
-        operation_type: int = OperationType.ROUTE.value,
-        query_params: Optional[Dict[str, Any]] = None
+            self,
+            src_id: str,
+            src_mac: str,
+            dest_id: str,
+            sequence_number: int,
+            time_to_live: int,
+            dest_mac: Optional[str] = None,
+            operation_type: int = OperationType.ROUTE.value,
+            query_params: Optional[Dict[str, Any]] = None
     ):
         self.type = RequestType.E_RREQ.value
         self.source_id = src_id
@@ -92,11 +96,17 @@ class E_RREQ:
         self.packet_topology.clear()
         self.previous_hop_mac = self.source_mac
 
-    def forward_prepare(self, current_node_mac: str, current_node_id: Optional[str], neighbors: List[str]) -> None:
+    def forward_prepare(self, current_node_mac: str, current_node_id: Optional[str], neighbors: List[str],
+                        routing_knowledge: Optional[List[Dict[str, Any]]] = None) -> None:
         """
         Prepares the packet for forwarding through an intermediate node.
-        Decrements TTL, increments hop_count, updates previous hop,
-        and appends the current node's topology entry.
+        Enhances topology information with node's routing knowledge.
+
+        Args:
+            current_node_mac: MAC address of the current node
+            current_node_id: ID of the current node (optional)
+            neighbors: List of neighbor MAC addresses
+            routing_knowledge: Optional routing knowledge to enhance topology information
         """
         self.time_to_live -= 1
         self.hop_count += 1
@@ -111,11 +121,27 @@ class E_RREQ:
         )
         self.packet_topology.append(new_entry)
 
+        # Enhance with additional routing knowledge if provided
+        # This is limited to avoid excessive packet size
+        if routing_knowledge and len(routing_knowledge) <= 5:  # Limit to 5 routes
+            for route in routing_knowledge:
+                dest_mac = route.get("destination", {}).get("bt_mac_address")
+                if dest_mac and dest_mac != self.destination_mac and len(route.get("hops", [])) <= 2:
+                    # Only include short paths to other destinations
+                    for hop in route.get("hops", []):
+                        if hop.get("bt_mac_address") not in [entry.bt_mac_address for entry in self.packet_topology]:
+                            # Add this hop's information to enrich topology
+                            self.packet_topology.append(TopologyEntry(
+                                node_id=hop.get("node_id"),
+                                bt_mac_address=hop.get("bt_mac_address", ""),
+                                neighbors=hop.get("neighbors", [])
+                            ))
+
     def is_final_destination(self, current_node_mac: str) -> bool:
         """
         Checks if the current node is the intended final destination.
         """
-        
+
         # If the E-RREQ is routed by MAC:
         if self.destination_mac and self.destination_mac == current_node_mac:
             return True
@@ -198,12 +224,12 @@ class E_RERR:
     reason: Optional[str] = None
 
     def prepare_error(
-        self,
-        failed_node_id: str,
-        failed_node_mac: str,
-        originator_id: str,
-        originator_mac: str,
-        reason: Optional[str] = None
+            self,
+            failed_node_id: str,
+            failed_node_mac: str,
+            originator_id: str,
+            originator_mac: str,
+            reason: Optional[str] = None
     ) -> None:
         """
         Fill in or update the fields of the E_RERR.
@@ -220,13 +246,15 @@ class E_RERR:
 class R_HELLO:
     """
     Hello message broadcast when a node joins the network or periodically,
-    allowing neighbors to register or refresh their routes.
+    allowing neighbors to register or refresh their routes and share topology knowledge.
     """
     type: int = field(default=RequestType.R_HELLO.value)
     node_id: str = ""
     bt_mac_address: str = ""
     timestamp: str = field(default_factory=lambda: str(datetime.now()))
     initial_neighbors: List[str] = field(default_factory=list)
+    # Routing knowledge - simplified version of routing table entries
+    routing_knowledge: List[Dict[str, Any]] = field(default_factory=list)
     # Add flag to indicate if sensor data should be included
     include_sensor_data: bool = False
     # Add configurable hello interval (in seconds)
@@ -259,6 +287,7 @@ class RoutingTableEntry:
     """
     host: TopologyEntry
     hops: List[TopologyEntry]
+
 
 @dataclass
 class AodvState:
@@ -324,15 +353,16 @@ def to_json(obj) -> str:
     """Serialize a dataclass object to a JSON string."""
     return json.dumps(asdict(obj), indent=2)
 
+
 def from_json(json_str: str, cls):
     """Deserialize a JSON string into an instance of the given class."""
     data = json.loads(json_str)
-    
+
     # Handle packet_topology entries for E_RREQ and E_RREP
     if cls in (E_RREQ, E_RREP) and "packet_topology" in data:
         topology_data = data.get("packet_topology", [])
         data["packet_topology"] = [TopologyEntry(**entry) for entry in topology_data]
-    
+
     # Create instance with deserialized data
     return cls(**data)
 
@@ -368,7 +398,7 @@ if __name__ == "__main__":
         query_params={"query": "temperature"}
     )
     query_req.send_prepare()
-    
+
     # Show serialized query E-RREQ
     json_str = to_json(query_req)
     print("\n[E-RREQ] Query Serialized JSON:\n", json_str)
@@ -385,7 +415,7 @@ if __name__ == "__main__":
         query_params={"hello_interval": 45, "include_sensor_data": True}
     )
     config_req.send_prepare()
-    
+
     # Show serialized config E-RREQ
     json_str = to_json(config_req)
     print("\n[E-RREQ] Config Serialized JSON:\n", json_str)
@@ -399,7 +429,7 @@ if __name__ == "__main__":
     )
     # Add response data for the query
     e_rrep.response_data = {"temperature": 24.5, "status": "ok"}
-    
+
     rep_json = to_json(e_rrep)
     print("\n[E-RREP] Query Response Serialized JSON:\n", rep_json)
 
@@ -421,7 +451,7 @@ if __name__ == "__main__":
     hello.initial_neighbors = ["AA:BB:CC:DD:EE:02", "AA:BB:CC:DD:EE:03"]
     hello.include_sensor_data = True
     hello.hello_interval = 45
-    
+
     hello_json = to_json(hello)
     print("\n[R_HELLO] Serialized JSON with sensor data flag:\n", hello_json)
 
@@ -439,7 +469,7 @@ if __name__ == "__main__":
         hops=[TopologyEntry("node-C", "AA:BB:CC:DD:EE:02", ["node-D", "node-E"])]
     )
     print("\n[AodvState] Current State:\n", my_state)
-    
+
     # Demonstrate NetworkConfig
     net_config = NetworkConfig(
         hello_interval=45,

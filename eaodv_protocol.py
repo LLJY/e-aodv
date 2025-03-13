@@ -345,7 +345,7 @@ class EAODVProtocol:
 
     def _create_hello_message(self) -> Dict[str, Any]:
         """
-        Create a standardized R_HELLO message.
+        Create a standardized R_HELLO message with enhanced topology information.
 
         Returns:
             Dictionary containing the R_HELLO message data
@@ -353,6 +353,28 @@ class EAODVProtocol:
         # Get current neighbor MACs
         with self.state_lock:
             neighbor_macs = [n.bt_mac_address for n in self.aodv_state.neighbours]
+
+            # Create simplified routing knowledge to share
+            routing_knowledge = []
+            for route in self.aodv_state.routing_table:
+                # Only share routes with reasonable hop counts to avoid excessive data
+                if len(route.hops) <= 3:  # Limit to routes with 3 or fewer hops
+                    hop_list = []
+                    for hop in route.hops:
+                        hop_list.append({
+                            "node_id": hop.node_id,
+                            "bt_mac_address": hop.bt_mac_address,
+                            "neighbors": hop.neighbors
+                        })
+
+                    routing_knowledge.append({
+                        "destination": {
+                            "node_id": route.host.node_id,
+                            "bt_mac_address": route.host.bt_mac_address
+                        },
+                        "hops": hop_list,
+                        "timestamp": str(time.time())
+                    })
 
         # Get updated capabilities from sensor registry
         capability_data = self.sensor_registry.get_all_capabilities()
@@ -367,6 +389,7 @@ class EAODVProtocol:
             "bt_mac_address": self.mac_address,
             "timestamp": str(time.time()),
             "initial_neighbors": neighbor_macs,
+            "routing_knowledge": routing_knowledge,  # Add routing knowledge
             "capabilities": capability_data,
             "hello_interval": self.network_config.hello_interval,
             "include_sensor_data": include_sensor_data
@@ -681,7 +704,7 @@ class EAODVProtocol:
 
     def _forward_route_request(self, e_rreq: E_RREQ, sender_address: str):
         """
-        Forward a route request to neighbors.
+        Forward a route request to neighbors with enhanced topology information.
 
         Args:
             e_rreq: Enhanced Route Request
@@ -692,11 +715,44 @@ class EAODVProtocol:
             with self.state_lock:
                 neighbor_macs = [n.bt_mac_address for n in self.aodv_state.neighbours]
 
-            # Prepare the request for forwarding
+                # Get selected routing knowledge to enhance topology
+                routing_knowledge = []
+                # Focus on short routes (1-2 hops) to enrich topology information
+                for route in self.aodv_state.routing_table:
+                    if len(route.hops) <= 2:  # Only include short routes
+                        dest = route.host
+
+                        # Skip routes to the request source or destination
+                        if dest.bt_mac_address in [e_rreq.source_mac, e_rreq.destination_mac]:
+                            continue
+
+                        hop_list = []
+                        for hop in route.hops:
+                            hop_list.append({
+                                "node_id": hop.node_id,
+                                "bt_mac_address": hop.bt_mac_address,
+                                "neighbors": hop.neighbors
+                            })
+
+                        routing_knowledge.append({
+                            "destination": {
+                                "node_id": dest.node_id,
+                                "bt_mac_address": dest.bt_mac_address
+                            },
+                            "hops": hop_list,
+                            "timestamp": str(time.time())
+                        })
+
+                        # Limit to 5 routes to avoid excessive packet size
+                        if len(routing_knowledge) >= 5:
+                            break
+
+            # Prepare the request for forwarding with enhanced topology
             e_rreq.forward_prepare(
                 current_node_mac=self.mac_address,
                 current_node_id=self.node_id,
-                neighbors=neighbor_macs
+                neighbors=neighbor_macs,
+                routing_knowledge=routing_knowledge
             )
 
             # Convert to JSON
@@ -735,26 +791,95 @@ class EAODVProtocol:
             # Log with operation type
             op_type = OperationType(e_rreq.operation_type).name if e_rreq.operation_type in [e.value for e in
                                                                                              OperationType] else "UNKNOWN"
-            logger.info(f"Forwarded E-RREQ ({op_type}) to {forwarded} devices")
+            logger.info(f"Forwarded E-RREQ ({op_type}) to {forwarded} devices with enhanced topology information")
 
         except Exception as e:
             logger.error(f"Error forwarding route request: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def _generate_route_reply(self, e_rreq: E_RREQ, sender_address: str):
         """
         Generate a route reply when we are the destination of a route request.
+        Includes optimized topology information.
 
         Args:
             e_rreq: Enhanced Route Request
             sender_address: Address of the node that sent us the request
         """
         try:
-            # Create route reply from the request
+            # Clean and optimize the packet topology at the destination
+            # This ensures we only include useful topology information
+            if e_rreq.packet_topology:
+                # Create a dictionary representation for the optimize_topology function
+                topology_entries = []
+                for entry in e_rreq.packet_topology:
+                    if hasattr(entry, 'bt_mac_address') and entry.bt_mac_address:
+                        topology_entries.append({
+                            "node_id": entry.node_id,
+                            "bt_mac_address": entry.bt_mac_address,
+                            "neighbors": entry.neighbors,
+                            "timestamp": e_rreq.timestamp  # Use request timestamp
+                        })
+
+                # Optimize the topology information
+                from topology_utils import optimize_topology  # Dynamically import
+                optimized_entries = optimize_topology(topology_entries)
+
+                # Rebuild the packet_topology with optimized data
+                e_rreq.packet_topology = []
+                for entry in optimized_entries:
+                    e_rreq.packet_topology.append(TopologyEntry(
+                        node_id=entry.get("node_id"),
+                        bt_mac_address=entry.get("bt_mac_address", ""),
+                        neighbors=entry.get("neighbors", [])
+                    ))
+                logger.info(f"Optimized topology information for reply: {len(optimized_entries)} entries")
+
+            # Create route reply from the optimized request
             e_rrep = E_RREP.from_erreq(e_rreq)
 
             # Get neighbors
             with self.state_lock:
                 neighbor_macs = [n.bt_mac_address for n in self.aodv_state.neighbours]
+
+                # Enrich with up to 3 additional routes from our routing table
+                # to help establish a better network map at the source
+                additional_routes = 0
+                if e_rreq.operation_type == OperationType.ROUTE.value:
+                    # Only add extra routes for pure route discovery (not queries/writes)
+                    for route in self.aodv_state.routing_table:
+                        # Skip routes to the source/destination nodes
+                        if (route.host.bt_mac_address == e_rreq.source_mac or
+                                route.host.bt_mac_address == e_rreq.destination_mac):
+                            continue
+
+                        # Only include short routes
+                        if len(route.hops) <= 2:
+                            # Get all the node info needed for the topology
+                            for hop in route.hops:
+                                entry_exists = False
+                                for existing in e_rrep.packet_topology:
+                                    if existing.bt_mac_address == hop.bt_mac_address:
+                                        entry_exists = True
+                                        break
+
+                                if not entry_exists:
+                                    e_rrep.packet_topology.append(hop)
+
+                            # Add the destination node info as well
+                            dest_exists = False
+                            for existing in e_rrep.packet_topology:
+                                if existing.bt_mac_address == route.host.bt_mac_address:
+                                    dest_exists = True
+                                    break
+
+                            if not dest_exists:
+                                e_rrep.packet_topology.append(route.host)
+
+                            additional_routes += 1
+                            if additional_routes >= 3:
+                                break
 
             # Update source fields
             e_rrep.source_id = self.node_id
@@ -790,10 +915,14 @@ class EAODVProtocol:
             # Log with operation type
             op_type = OperationType(e_rreq.operation_type).name if e_rreq.operation_type in [e.value for e in
                                                                                              OperationType] else "UNKNOWN"
-            logger.info(f"Sent E-RREP ({op_type}) to {sender_address} in response to request")
+
+            logger.info(f"Sent E-RREP ({op_type}) to {sender_address} with optimized topology " +
+                        f"({len(e_rrep.packet_topology)} entries, {additional_routes} additional routes)")
 
         except Exception as e:
             logger.error(f"Error generating route reply: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def _handle_route_reply(self, sender_address: str, message_data: Dict[str, Any]):
         """
@@ -1026,7 +1155,10 @@ class EAODVProtocol:
 
     def _handle_route_error(self, sender_address: str, message_data: Dict[str, Any]):
         """
-        Handle an incoming route error (E-RERR).
+        Handle an incoming route error (E-RERR) with network resilience.
+
+        When a node disconnects, we only remove routes if we don't have
+        an alternative direct connection to the supposedly failed node.
 
         Args:
             sender_address: MAC address of the sender
@@ -1035,19 +1167,101 @@ class EAODVProtocol:
         try:
             # Extract information
             failed_node_mac = message_data.get("failed_node_mac", "")
+            failed_node_id = message_data.get("failed_node_id", "")
+            originator_mac = message_data.get("originator_mac", "")
+            reason = message_data.get("reason", "unknown")
 
             if not failed_node_mac:
                 logger.error("Route error missing failed node MAC")
                 return
 
-            # Remove routes using the failed node
-            self._remove_routes_through_node(failed_node_mac)
+            # Log receipt of the error
+            logger.info(f"Received E-RERR: Node {failed_node_id or failed_node_mac} " +
+                        f"reported failed by {originator_mac}, reason: {reason}")
 
-            # Forward the error to other nodes
-            self._forward_route_error(message_data, sender_address)
+            # Check if we have a direct connection to the supposedly failed node
+            direct_connection_exists = False
+            with self.state_lock:
+                direct_connection_exists = failed_node_mac in self.bt_comm.connected_devices
+
+            if direct_connection_exists:
+                # We still have a direct connection to this node, so it's not truly "failed" for us
+                logger.info(f"Node {failed_node_id or failed_node_mac} reported as failed, " +
+                            f"but we still have a direct connection. Updating routes only.")
+
+                # Just update routes that go through the originator to this node
+                self._update_routes_for_partial_failure(originator_mac, failed_node_mac)
+            else:
+                # We don't have a direct connection, so treat this as a full node failure
+                logger.info(f"No direct connection to {failed_node_id or failed_node_mac}. " +
+                            f"Removing all routes through this node.")
+
+                # Remove routes using the failed node
+                self._remove_routes_through_node(failed_node_mac)
+
+                # Forward the error to other nodes
+                self._forward_route_error(message_data, sender_address)
 
         except Exception as e:
             logger.error(f"Error handling route error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    def _update_routes_for_partial_failure(self, failed_link_mac: str, target_node_mac: str):
+        """
+        Update routes when a link between two nodes has failed, but the target
+        node is still directly accessible to us.
+
+        Args:
+            failed_link_mac: MAC of the node that can't reach the target
+            target_node_mac: MAC of the target node that is still directly connected to us
+        """
+        try:
+            with self.state_lock:
+                # Find routes to target_node_mac that go through failed_link_mac
+                for route in self.aodv_state.routing_table:
+                    if route.host.bt_mac_address == target_node_mac:
+                        # Check if this route uses failed_link_mac as an intermediate hop
+                        uses_failed_link = any(hop.bt_mac_address == failed_link_mac for hop in route.hops)
+
+                        if uses_failed_link:
+                            # Replace with direct route if we have a direct connection
+                            if target_node_mac in self.bt_comm.connected_devices:
+                                # Create a direct route (empty hops list)
+                                logger.info(f"Updating route to {target_node_mac}: " +
+                                            f"Replacing route through {failed_link_mac} with direct connection")
+                                self.aodv_state.add_or_update_route(
+                                    dest_mac=target_node_mac,
+                                    dest_id=route.host.node_id,
+                                    hops=[]  # Empty hops means direct connection
+                                )
+
+                # Also update any routes that use target_node_mac as an intermediate hop
+                # to avoid using paths through the broken link
+                routes_to_update = []
+                for route in self.aodv_state.routing_table:
+                    # Skip the target node itself
+                    if route.host.bt_mac_address == target_node_mac:
+                        continue
+
+                    # Check if this route uses target_node_mac as a hop
+                    for i, hop in enumerate(route.hops):
+                        if hop.bt_mac_address == target_node_mac:
+                            # Check if the route uses failed_link_mac -> target_node_mac path
+                            if i > 0 and route.hops[i - 1].bt_mac_address == failed_link_mac:
+                                routes_to_update.append(route.host.bt_mac_address)
+                                break
+
+                # Update these routes if needed - this might trigger new route discoveries
+                for dest_mac in routes_to_update:
+                    logger.info(f"Marking route to {dest_mac} for update due to link failure")
+                    # We'll actually remove the route and let route discovery rebuild it
+                    self.aodv_state.remove_route(dest_mac)
+
+        except Exception as e:
+            logger.error(f"Error updating routes for partial failure: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def _remove_routes_through_node(self, node_mac: str):
         """
@@ -1108,7 +1322,7 @@ class EAODVProtocol:
 
     def _handle_hello(self, sender_address: str, message_data: Dict[str, Any]):
         """
-        Handle an incoming hello message (R_HELLO).
+        Handle an incoming hello message (R_HELLO) with enhanced topology information.
 
         Args:
             sender_address: MAC address of the sender
@@ -1119,6 +1333,7 @@ class EAODVProtocol:
             node_id = message_data.get("node_id", "")
             bt_mac_address = message_data.get("bt_mac_address", "")
             initial_neighbors = message_data.get("initial_neighbors", [])
+            routing_knowledge = message_data.get("routing_knowledge", [])
             capabilities = message_data.get("capabilities", {})
             sensor_data = message_data.get("sensor_data", {})
             hello_interval = message_data.get("hello_interval", 30)  # Default to 30s
@@ -1130,6 +1345,7 @@ class EAODVProtocol:
 
             # Update neighbor information
             with self.state_lock:
+                # Add/update neighbor
                 self.aodv_state.add_neighbor(
                     neighbor_mac=bt_mac_address,
                     neighbor_id=node_id,
@@ -1139,15 +1355,96 @@ class EAODVProtocol:
                 # Store neighbor capabilities
                 self.neighbor_capabilities[bt_mac_address] = capabilities
 
-            # Log temperature if available
+                # Process routing knowledge from hello message
+                if routing_knowledge:
+                    logger.info(f"Received {len(routing_knowledge)} routes in hello from {node_id}")
+                    routes_added = 0
+
+                    # Incorporate routing knowledge into our routing table
+                    for route_info in routing_knowledge:
+                        dest = route_info.get("destination", {})
+                        dest_mac = dest.get("bt_mac_address")
+                        dest_id = dest.get("node_id")
+
+                        # Skip invalid routes, routes to self, or routes we already have direct connections to
+                        if (not dest_mac or
+                                dest_mac == self.mac_address or
+                                dest_mac in self.bt_comm.connected_devices):
+                            continue
+
+                        hops = []
+
+                        # First hop is always the sender of the hello
+                        sender_hop = TopologyEntry(
+                            node_id=node_id,
+                            bt_mac_address=bt_mac_address,
+                            neighbors=initial_neighbors
+                        )
+                        hops.append(sender_hop)
+
+                        # Add remaining hops from routing knowledge
+                        has_loop = False
+                        for hop_info in route_info.get("hops", []):
+                            if isinstance(hop_info, dict):
+                                hop_mac = hop_info.get("bt_mac_address", "")
+
+                                # Check for routing loops
+                                if hop_mac == self.mac_address:
+                                    has_loop = True
+                                    break
+
+                                hop = TopologyEntry(
+                                    node_id=hop_info.get("node_id"),
+                                    bt_mac_address=hop_mac,
+                                    neighbors=hop_info.get("neighbors", [])
+                                )
+                                hops.append(hop)
+
+                        # Only add route if no loops were detected and we have valid hops
+                        if not has_loop and hops:
+                            # Check if we already have a better route
+                            existing_route = next(
+                                (r for r in self.aodv_state.routing_table if r.host.bt_mac_address == dest_mac),
+                                None
+                            )
+
+                            # Add or update route if:
+                            # 1. We don't have an existing route, or
+                            # 2. This route is shorter than our existing route
+                            if not existing_route or len(hops) < len(existing_route.hops):
+                                self.aodv_state.add_or_update_route(
+                                    dest_mac=dest_mac,
+                                    dest_id=dest_id,
+                                    hops=hops
+                                )
+                                routes_added += 1
+
+                    if routes_added > 0:
+                        logger.info(f"Added/updated {routes_added} routes from hello message")
+
+            # Log capabilities and sensor data as in the original implementation
             temp_log = ""
             if "temperature_value" in capabilities:
                 temp_log = f", Temperature: {capabilities['temperature_value']}°C"
 
             capability_str = ", ".join([
                 f"{cap}" for cap in capabilities.keys()
-                if cap != "temperature_value" and capabilities[cap] is True
+                if cap != "temperature_value" and not cap.endswith("_writable") and capabilities[cap] is True
             ])
+
+            # Log writable capabilities
+            writable_caps = []
+            for cap in capabilities.keys():
+                if cap.endswith("_writable") and capabilities[cap] is True:
+                    sensor_name = cap.replace("_writable", "")
+                    writable_caps.append(sensor_name)
+
+            if writable_caps:
+                writable_str = ", ".join(writable_caps)
+                if capability_str:
+                    capability_str += f", Writable: {writable_str}"
+                else:
+                    capability_str = f"Writable: {writable_str}"
 
             if capability_str:
                 logger.info(f"Updated neighbor: {node_id} ({bt_mac_address}){temp_log}, Capabilities: {capability_str}")
@@ -1161,6 +1458,8 @@ class EAODVProtocol:
 
         except Exception as e:
             logger.error(f"Error handling hello message: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def _handle_query_request(self, e_rreq: E_RREQ, sender_address: str):
         """
