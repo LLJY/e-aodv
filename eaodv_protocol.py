@@ -909,7 +909,7 @@ class EAODVProtocol:
                 neighbors=neighbor_macs
             )
 
-            # Convert to JSON for sending
+            # Convert to JSON for sending - FIX SERIALIZATION HERE
             rrep_data = {
                 "type": RequestType.E_RREP.value,
                 "source_id": e_rrep.source_id,
@@ -922,9 +922,27 @@ class EAODVProtocol:
                 "timestamp": e_rrep.timestamp,
                 "operation_type": e_rrep.operation_type,
                 "response_data": e_rrep.response_data,
-                "packet_topology": [asdict(entry) for entry in e_rrep.packet_topology]
-                if hasattr(e_rrep.packet_topology[0], 'asdict') else e_rrep.packet_topology
+                "packet_topology": []  # Initialize as empty list
             }
+
+            # FIX: Proper serialization of packet topology entries
+            if e_rrep.packet_topology:
+                topology_entries = []
+                for entry in e_rrep.packet_topology:
+                    # Safely convert each entry to dict
+                    if hasattr(entry, 'asdict'):
+                        topology_entries.append(asdict(entry))
+                    elif hasattr(entry, '__dict__'):
+                        # For non-dataclass objects with __dict__
+                        topology_entries.append(entry.__dict__)
+                    else:
+                        # Entry is already a dict or primitive type
+                        topology_entries.append({
+                            "node_id": entry.node_id if hasattr(entry, "node_id") else None,
+                            "bt_mac_address": entry.bt_mac_address if hasattr(entry, "bt_mac_address") else "",
+                            "neighbors": entry.neighbors if hasattr(entry, "neighbors") else []
+                        })
+                rrep_data["packet_topology"] = topology_entries
 
             # Send to the previous hop
             self.bt_comm.send_json(sender_address, rrep_data)
