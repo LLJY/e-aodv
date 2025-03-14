@@ -755,7 +755,7 @@ class EAODVProtocol:
                 routing_knowledge=routing_knowledge
             )
 
-            # Convert to JSON
+            # Convert to JSON - FIX: properly handle TopologyEntry serialization
             forward_data = {
                 "type": RequestType.E_RREQ.value,
                 "source_id": e_rreq.source_id,
@@ -770,10 +770,27 @@ class EAODVProtocol:
                 "previous_hop_mac": e_rreq.previous_hop_mac,
                 "operation_type": e_rreq.operation_type,
                 "query_params": e_rreq.query_params,
-                "packet_topology": [asdict(entry) for entry in e_rreq.packet_topology]
-                if hasattr(e_rreq.packet_topology[0], 'asdict') else e_rreq.packet_topology
+                "packet_topology": []  # Initialize as empty list
             }
 
+            # FIX: Proper serialization of packet topology entries
+            if e_rreq.packet_topology:
+                topology_entries = []
+                for entry in e_rreq.packet_topology:
+                    # Safely convert each entry to dict
+                    if hasattr(entry, 'asdict'):
+                        topology_entries.append(asdict(entry))
+                    elif hasattr(entry, '__dict__'):
+                        # For non-dataclass objects with __dict__
+                        topology_entries.append(entry.__dict__)
+                    else:
+                        # Entry is already a dict or primitive type
+                        topology_entries.append({
+                            "node_id": entry.node_id if hasattr(entry, "node_id") else None,
+                            "bt_mac_address": entry.bt_mac_address if hasattr(entry, "bt_mac_address") else "",
+                            "neighbors": entry.neighbors if hasattr(entry, "neighbors") else []
+                        })
+                forward_data["packet_topology"] = topology_entries
             # Get connected devices
             with self.state_lock:
                 connected_devices = list(self.bt_comm.connected_devices.keys())
@@ -1110,6 +1127,31 @@ class EAODVProtocol:
             if "packet_topology" not in reply_data:
                 reply_data["packet_topology"] = []
 
+            # Ensure existing topology is properly serialized
+            if "packet_topology" in reply_data:
+                # Create a new serializable list
+                new_topology = []
+
+                # Process existing entries first
+                for entry in reply_data["packet_topology"]:
+                    if isinstance(entry, dict):
+                        new_topology.append(entry)  # Already in dict form
+                    elif hasattr(entry, 'asdict'):
+                        new_topology.append(asdict(entry))
+                    elif hasattr(entry, '__dict__'):
+                        new_topology.append(entry.__dict__)
+                    else:
+                        # Convert attributes to dict
+                        new_topology.append({
+                            "node_id": entry.node_id if hasattr(entry, "node_id") else None,
+                            "bt_mac_address": entry.bt_mac_address if hasattr(entry, "bt_mac_address") else "",
+                            "neighbors": entry.neighbors if hasattr(entry, "neighbors") else []
+                        })
+
+                # Replace with properly serialized list
+                reply_data["packet_topology"] = new_topology
+
+            # Now append our entry
             reply_data["packet_topology"].append(topology_entry)
 
             # Find next hop towards destination
@@ -2418,13 +2460,15 @@ class EAODVProtocol:
     def get_network_topology(self) -> Dict[str, Any]:
         """
         Get the current network topology as seen by this node.
+        Enhanced to fully utilize R_HELLO information.
 
         Returns:
             Dictionary representing the network topology
         """
         topology = {
             "nodes": [],
-            "links": []
+            "links": [],
+            "last_updated": str(time.time())
         }
 
         with self.state_lock:
@@ -2432,92 +2476,119 @@ class EAODVProtocol:
             topology["nodes"].append({
                 "id": self.node_id,
                 "mac": self.mac_address,
-                "is_local": True
+                "is_local": True,
+                "capabilities": self.capabilities
             })
 
-            # Add neighbors as nodes
+            # Keep track of nodes and links we've already added
+            added_nodes = {self.mac_address}
+            added_links = set()  # Using (source, target) tuples
+
+            # Helper function to add a link if it's not already present
+            def add_link_if_new(source, target):
+                # Skip self-loops (connections from a node to itself)
+                if source == target:
+                    return
+
+                # Create a canonical representation of the link
+                # (always using lexicographically smaller MAC as source)
+                link_key = tuple(sorted([source, target]))
+                if link_key not in added_links:
+                    topology["links"].append({
+                        "source": source,
+                        "target": target
+                    })
+                    added_links.add(link_key)
+
+            # Add neighbors as nodes and their links
             for neighbor in self.aodv_state.neighbours:
-                topology["nodes"].append({
-                    "id": neighbor.node_id or neighbor.bt_mac_address,
-                    "mac": neighbor.bt_mac_address,
-                    "is_local": False
-                })
+                mac = neighbor.bt_mac_address
+                if mac not in added_nodes:
+                    topology["nodes"].append({
+                        "id": neighbor.node_id or mac,
+                        "mac": mac,
+                        "is_local": False,
+                        "capabilities": self.neighbor_capabilities.get(mac, {})
+                    })
+                    added_nodes.add(mac)
 
                 # Add link to neighbor
-                topology["links"].append({
-                    "source": self.mac_address,
-                    "target": neighbor.bt_mac_address
-                })
+                add_link_if_new(self.mac_address, mac)
 
-            # Add information from routes
+                # Add neighbor's neighbors from HELLO messages
+                for neighbor_of_neighbor in neighbor.neighbors:
+                    # Skip self-references in neighbor lists
+                    if neighbor_of_neighbor == mac or neighbor_of_neighbor == self.mac_address:
+                        continue
+
+                    if neighbor_of_neighbor not in added_nodes:
+                        # We don't have full info about this node, just the MAC
+                        topology["nodes"].append({
+                            "id": neighbor_of_neighbor,  # Use MAC as ID since we don't have node_id
+                            "mac": neighbor_of_neighbor,
+                            "is_local": False
+                        })
+                        added_nodes.add(neighbor_of_neighbor)
+
+                    # Add link between neighbor and its neighbor
+                    add_link_if_new(mac, neighbor_of_neighbor)
+
+            # Add information from routes (including HELLO-propagated routes)
             for route in self.aodv_state.routing_table:
                 # Add destination if not already in nodes
                 dest_mac = route.host.bt_mac_address
-                dest_in_nodes = any(node["mac"] == dest_mac for node in topology["nodes"])
-
-                if not dest_in_nodes:
+                if dest_mac not in added_nodes:
                     topology["nodes"].append({
                         "id": route.host.node_id or dest_mac,
                         "mac": dest_mac,
                         "is_local": False
                     })
+                    added_nodes.add(dest_mac)
 
                 # Add links between hops
-                prev_hop = None
+                prev_hop = self.mac_address  # Start from local node
                 for hop in route.hops:
                     hop_mac = hop.bt_mac_address
 
                     # Add hop if not already in nodes
-                    hop_in_nodes = any(node["mac"] == hop_mac for node in topology["nodes"])
-                    if not hop_in_nodes:
+                    if hop_mac not in added_nodes:
                         topology["nodes"].append({
                             "id": hop.node_id or hop_mac,
                             "mac": hop_mac,
-                            "is_local": False
+                            "is_local": False,
+                            "capabilities": self.neighbor_capabilities.get(hop_mac, {})
                         })
+                        added_nodes.add(hop_mac)
 
-                    # Add link from previous hop (or source)
-                    if prev_hop is None:
-                        # First hop, connect from local node
-                        link = {
-                            "source": self.mac_address,
-                            "target": hop_mac
-                        }
-                    else:
-                        # Connect from previous hop
-                        link = {
-                            "source": prev_hop,
-                            "target": hop_mac
-                        }
+                    # Add link from previous hop
+                    add_link_if_new(prev_hop, hop_mac)
 
-                    # Check if link already exists
-                    link_exists = any(
-                        (l["source"] == link["source"] and l["target"] == link["target"]) or
-                        (l["source"] == link["target"] and l["target"] == link["source"])
-                        for l in topology["links"]
-                    )
+                    # Also add neighbors of this hop if known
+                    for hop_neighbor in hop.neighbors:
+                        # Skip self-references in neighbor lists
+                        if hop_neighbor == hop_mac or hop_neighbor == self.mac_address:
+                            continue
 
-                    if not link_exists:
-                        topology["links"].append(link)
+                        if hop_neighbor not in added_nodes:
+                            topology["nodes"].append({
+                                "id": hop_neighbor,
+                                "mac": hop_neighbor,
+                                "is_local": False
+                            })
+                            added_nodes.add(hop_neighbor)
+
+                        # Add link between hop and its neighbor
+                        add_link_if_new(hop_mac, hop_neighbor)
 
                     prev_hop = hop_mac
 
-                # Connect last hop to destination
-                if prev_hop is not None:
-                    link = {
-                        "source": prev_hop,
-                        "target": dest_mac
-                    }
+                # If this is a direct route (no hops), add direct link to destination
+                if not route.hops and dest_mac != self.mac_address:
+                    add_link_if_new(self.mac_address, dest_mac)
 
-                    # Check if link already exists
-                    link_exists = any(
-                        (l["source"] == link["source"] and l["target"] == link["target"]) or
-                        (l["source"] == link["target"] and l["target"] == link["source"])
-                        for l in topology["links"]
-                    )
-
-                    if not link_exists:
-                        topology["links"].append(link)
+                # Otherwise connect last hop to destination
+                elif route.hops:
+                    add_link_if_new(prev_hop, dest_mac)
 
         return topology
 
