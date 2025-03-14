@@ -183,7 +183,7 @@ class E_RREP:
             source_mac=erreq.destination_mac or "",
             destination_id=erreq.source_id,
             destination_mac=erreq.source_mac,
-            broadcast_id=erreq.broadcast_id,
+            broadcast_id=uuid.uuid4().hex,
             sequence_number=erreq.sequence_number,
             hop_count=erreq.hop_count,
             timestamp=str(datetime.now()),
