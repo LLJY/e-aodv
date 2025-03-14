@@ -1091,184 +1091,226 @@ class EAODVDemo:
             input("\nPress Enter to continue...")
             return
 
-        # Create a networkx graph
-        G = nx.Graph()
-
-        # Add nodes
-        for node in topology["nodes"]:
-            node_id = node.get("id") or node.get("mac", "Unknown")
-            is_local = node.get("is_local", False)
-
-            # Set node attributes
-            attrs = {
-                "mac": node.get("mac", ""),
-                "is_local": is_local
-            }
-
-            # Add the node
-            G.add_node(node_id, **attrs)
-
-        # Add links
-        for link in topology["links"]:
-            source = link.get("source")
-            target = link.get("target")
-
-            # Try to find more descriptive node IDs if available
-            source_id = source
-            target_id = target
-            for node in topology["nodes"]:
-                if node.get("mac") == source:
-                    source_id = node.get("id") or source
-                if node.get("mac") == target:
-                    target_id = node.get("id") or target
-
-            G.add_edge(source_id, target_id)
-
-        # Create the figure
-        plt.figure(figsize=(10, 8))
-
-        # Get positions (layout)
-        pos = nx.spring_layout(G)
-
-        # Draw nodes
-        node_colors = []
-        node_sizes = []
-
-        for node in G.nodes():
-            if G.nodes[node].get("is_local", False):
-                node_colors.append('red')  # Local node is red
-                node_sizes.append(800)  # And larger
-            else:
-                node_colors.append('skyblue')
-                node_sizes.append(500)
-
-        nx.draw_networkx_nodes(G, pos,
-                               node_color=node_colors,
-                               node_size=node_sizes)
-
-        # Draw edges
-        nx.draw_networkx_edges(G, pos, width=2, alpha=0.7, edge_color='gray')
-
-        # Draw labels
-        nx.draw_networkx_labels(G, pos, font_size=10, font_family='sans-serif')
-
-        # Add a title
-        plt.title(f'E-AODV Network Topology - Node: {self.node_id}')
-        plt.axis('off')  # Turn off axis
-
-        # Create a temporary file
-        fd, path = tempfile.mkstemp(suffix='.png')
-        os.close(fd)
-
-        # Save the figure
-        plt.savefig(path, format='png', dpi=150, bbox_inches='tight')
-        plt.close()
-
-        print(f"Visualization saved to: {path}")
-        print("Attempting to open the image...")
-
-        # Try to open the image with the default viewer
         try:
-            if sys.platform == 'darwin':  # macOS
-                os.system(f"open {path}")
-            elif sys.platform == 'win32':  # Windows
-                os.startfile(path)
-            else:  # Linux
-                os.system(f"xdg-open {path}")
-            print("Image opened in default viewer.")
-        except Exception as e:
-            print(f"Could not open image automatically: {e}")
-            print(f"Please open the file manually: {path}")
+            # Create a networkx graph
+            G = nx.Graph()
 
-        # Also provide HTML output option for more interactivity
-        html_option = input("\nGenerate interactive HTML visualization? (y/n): ")
-        if html_option.lower() == 'y':
+            # Add nodes
+            for node in topology["nodes"]:
+                node_id = node.get("id") or node.get("mac", "Unknown")
+                is_local = node.get("is_local", False)
+
+                # Set node attributes
+                attrs = {
+                    "mac": node.get("mac", ""),
+                    "is_local": is_local
+                }
+
+                # Add the node
+                G.add_node(node_id, **attrs)
+
+            # Add links
+            for link in topology["links"]:
+                source = link.get("source")
+                target = link.get("target")
+
+                # Try to find more descriptive node IDs if available
+                source_id = source
+                target_id = target
+                for node in topology["nodes"]:
+                    if node.get("mac") == source:
+                        source_id = node.get("id") or source
+                    if node.get("mac") == target:
+                        target_id = node.get("id") or target
+
+                G.add_edge(source_id, target_id)
+
+            # Create the figure
+            plt.figure(figsize=(10, 8))
+
+            # Get positions (layout)
+            pos = nx.spring_layout(G)
+
+            # Draw nodes
+            node_colors = []
+            node_sizes = []
+
+            for node in G.nodes():
+                if G.nodes[node].get("is_local", False):
+                    node_colors.append('red')  # Local node is red
+                    node_sizes.append(800)  # And larger
+                else:
+                    node_colors.append('skyblue')
+                    node_sizes.append(500)
+
+            nx.draw_networkx_nodes(G, pos,
+                                   node_color=node_colors,
+                                   node_size=node_sizes)
+
+            # Draw edges
+            nx.draw_networkx_edges(G, pos, width=2, alpha=0.7, edge_color='gray')
+
+            # Draw labels
+            nx.draw_networkx_labels(G, pos, font_size=10, font_family='sans-serif')
+
+            # Add a title
+            plt.title(f'E-AODV Network Topology - Node: {self.node_id}')
+            plt.axis('off')  # Turn off axis
+
+            # Create a temporary file
+            fd, path = tempfile.mkstemp(suffix='.png')
+            os.close(fd)
+
+            # Save the figure
+            plt.savefig(path, format='png', dpi=150, bbox_inches='tight')
+            plt.close()
+
+            print(f"Visualization saved to: {path}")
+            print("Attempting to open the image...")
+
+            # Try to open the image with the default viewer
             try:
-                import networkx.drawing.nx_pylab as nx_pylab
-                from networkx.drawing.nx_agraph import graphviz_layout
-                import plotly.graph_objects as go
-                import plotly.offline as pyoff
+                if sys.platform == 'darwin':  # macOS
+                    os.system(f"open {path}")
+                elif sys.platform == 'win32':  # Windows
+                    os.startfile(path)
+                else:  # Linux
+                    os.system(f"xdg-open {path}")
+                print("Image opened in default viewer.")
+            except Exception as e:
+                print(f"Could not open image automatically: {e}")
+                print(f"Please open the file manually: {path}")
 
-                # Create HTML visualization
-                html_fd, html_path = tempfile.mkstemp(suffix='.html')
-                os.close(html_fd)
+            # Also provide HTML output option for more interactivity
+            html_option = input("\nGenerate interactive HTML visualization? (y/n): ")
+            if html_option.lower() == 'y':
+                try:
+                    import plotly.graph_objects as go
+                    import plotly.offline as pyoff
 
-                # Create plotly figure
-                edge_x = []
-                edge_y = []
-                for edge in G.edges():
-                    x0, y0 = pos[edge[0]]
-                    x1, y1 = pos[edge[1]]
-                    edge_x.extend([x0, x1, None])
-                    edge_y.extend([y0, y1, None])
+                    # Create HTML visualization
+                    html_fd, html_path = tempfile.mkstemp(suffix='.html')
+                    os.close(html_fd)
 
-                edge_trace = go.Scatter(
-                    x=edge_x, y=edge_y,
-                    line=dict(width=1.5, color='#888'),
-                    hoverinfo='none',
-                    mode='lines')
+                    # Debug output to confirm we're using the correct number of nodes
+                    print(f"Creating visualization with {len(G.nodes())} nodes and {len(G.edges())} edges")
 
-                node_x = []
-                node_y = []
-                for node in G.nodes():
-                    x, y = pos[node]
-                    node_x.append(x)
-                    node_y.append(y)
+                    # Create edge traces
+                    edge_x = []
+                    edge_y = []
+                    for source, target in G.edges():
+                        x0, y0 = pos[source]
+                        x1, y1 = pos[target]
+                        edge_x.extend([x0, x1, None])
+                        edge_y.extend([y0, y1, None])
 
-                node_trace = go.Scatter(
-                    x=node_x, y=node_y,
-                    mode='markers+text',
-                    hoverinfo='text',
-                    marker=dict(
-                        showscale=False,
-                        colorscale='YlGnBu',
-                        size=15,
-                        colorbar=dict(
-                            thickness=15,
-                            title='Node Connections',
-                            xanchor='left',
-                            titleside='right'
+                    edge_trace = go.Scatter(
+                        x=edge_x, y=edge_y,
+                        line=dict(width=2, color='#888'),
+                        hoverinfo='none',
+                        mode='lines')
+
+                    # Create node traces - SEPARATE TRACES FOR BETTER CONTROL
+                    local_nodes_x = []
+                    local_nodes_y = []
+                    local_nodes_text = []
+                    remote_nodes_x = []
+                    remote_nodes_y = []
+                    remote_nodes_text = []
+
+                    # Populate node data
+                    for node in G.nodes():
+                        x, y = pos[node]
+                        node_attrs = G.nodes[node]
+                        hover_text = f"ID: {node}<br>MAC: {node_attrs.get('mac', 'Unknown')}"
+
+                        if node_attrs.get("is_local", False):
+                            local_nodes_x.append(x)
+                            local_nodes_y.append(y)
+                            local_nodes_text.append(hover_text)
+                        else:
+                            remote_nodes_x.append(x)
+                            remote_nodes_y.append(y)
+                            remote_nodes_text.append(hover_text)
+
+                    # Create trace for the local node (red)
+                    local_node_trace = go.Scatter(
+                        x=local_nodes_x, y=local_nodes_y,
+                        mode='markers+text',
+                        name='Local Node',
+                        marker=dict(
+                            color='red',
+                            size=20,
+                            line=dict(width=2, color='darkred')
                         ),
-                        line_width=2))
+                        text=local_nodes_text,
+                        textposition="top center",
+                        hoverinfo='text'
+                    )
 
-                # Add node attributes for hover text
-                node_text = []
-                node_colors = []
-                for node in G.nodes():
-                    node_attrs = G.nodes[node]
-                    hover_text = f"ID: {node}<br>MAC: {node_attrs.get('mac', 'Unknown')}"
-                    node_text.append(hover_text)
+                    # Create trace for remote nodes (blue)
+                    remote_node_trace = go.Scatter(
+                        x=remote_nodes_x, y=remote_nodes_y,
+                        mode='markers+text',
+                        name='Remote Nodes',
+                        marker=dict(
+                            color='skyblue',
+                            size=15,
+                            line=dict(width=1, color='darkblue')
+                        ),
+                        text=remote_nodes_text,
+                        textposition="top center",
+                        hoverinfo='text'
+                    )
 
-                    if node_attrs.get("is_local", False):
-                        node_colors.append('red')
-                    else:
-                        node_colors.append('skyblue')
-
-                node_trace.text = node_text
-                node_trace.marker.color = node_colors
-
-                fig = go.Figure(data=[edge_trace, node_trace],
-                                layout=go.Layout(
-                                    title=f'E-AODV Network Topology - Node: {self.node_id}',
-                                    titlefont_size=16,
-                                    showlegend=False,
-                                    hovermode='closest',
-                                    margin=dict(b=20, l=5, r=5, t=40),
-                                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
+                    # Create figure with multiple traces
+                    fig = go.Figure(
+                        data=[edge_trace, remote_node_trace, local_node_trace],
+                        layout=go.Layout(
+                            title=f'E-AODV Network Topology - Node: {self.node_id} ({len(G.nodes())} nodes)',
+                            showlegend=True,
+                            legend=dict(x=0, y=1.1),
+                            hovermode='closest',
+                            margin=dict(b=20, l=5, r=5, t=40),
+                            annotations=[
+                                dict(
+                                    text=f"Total: {len(G.nodes())} nodes, {len(G.edges())} connections",
+                                    showarrow=False,
+                                    xref="paper", yref="paper",
+                                    x=0.01, y=-0.05
                                 )
+                            ],
+                            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+                        )
+                    )
 
-                # Write to HTML file
-                pyoff.plot(fig, filename=html_path, auto_open=False)
+                    # Write to HTML file with config for better interactivity
+                    config = {
+                        'scrollZoom': True,
+                        'displayModeBar': True,
+                        'editable': True
+                    }
+                    pyoff.plot(fig, filename=html_path, auto_open=False, config=config)
 
-                # Try to open the HTML file in a browser
-                webbrowser.open('file://' + os.path.abspath(html_path))
+                    # Try to open the HTML file in a browser
+                    webbrowser.open('file://' + os.path.abspath(html_path))
 
-                print(f"Interactive visualization saved to: {html_path}")
-                print("Opening in web browser...")
-            except ImportError:
-                print("Could not generate interactive visualization.")
-                print("Required libraries: plotly (pip install plotly)")
+                    print(f"Interactive visualization saved to: {html_path}")
+                    print(f"Displaying {len(G.nodes())} nodes and {len(G.edges())} connections")
+
+                except ImportError:
+                    print("Could not generate interactive visualization.")
+                    print("Required libraries: plotly (pip install plotly)")
+                except Exception as e:
+                    print(f"Error generating interactive visualization: {str(e)}")
+                    import traceback
+                    print(traceback.format_exc())
+
+        except Exception as e:
+            print(f"Error generating visualization: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
 
         input("\nPress Enter to continue...")
 
