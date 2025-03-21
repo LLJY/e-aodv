@@ -576,6 +576,7 @@ class EAODVProtocol:
                 failed_node_mac=addr,
                 originator_id=self.node_id,
                 originator_mac=self.mac_address,
+                time_to_live=self.network_config.ttl_default,
                 reason=reason
             )
 
@@ -1459,6 +1460,9 @@ class EAODVProtocol:
             for device_addr in connected_devices:
                 if device_addr != sender_address:
                     try:
+                        if error_data["time_to_live"] is not None:
+                            logger.error("RERR has no TTL!!!")
+                            error_data["time_to_live"] = error_data["time_to_live"] - 1
                         self.bt_comm.send_json(device_addr, error_data)
                     except Exception as e:
                         logger.error(f"Failed to forward E-RERR to {device_addr}: {e}")
@@ -2096,12 +2100,12 @@ class EAODVProtocol:
 
                 # Use the regular broadcast deduplication mechanism
                 # Forward to all nodes except the one who sent us the config
-                self._propagate_config_to_neighbors(e_rreq.query_params, sender_address)
+                self._propagate_config_to_neighbors(e_rreq.query_params, sender_address, e_rreq.broadcast_id)
 
         except Exception as e:
             logger.error(f"Error handling config request: {e}")
 
-    def _propagate_config_to_neighbors(self, config_params: Dict[str, Any], source_mac: str):
+    def _propagate_config_to_neighbors(self, config_params: Dict[str, Any], source_mac: str, broadcast_id: Optional[str] = None):
         """
         Propagate configuration changes to neighbors.
 
@@ -2146,7 +2150,8 @@ class EAODVProtocol:
 
                 try:
                     # Create a new request with a unique broadcast ID
-                    broadcast_id = f"cfg-{uuid.uuid4().hex}"
+                    if broadcast_id is None:
+                        broadcast_id = f"cfg-{uuid.uuid4().hex}"
 
                     # Convert to JSON directly for immediate sending
                     request_data = {

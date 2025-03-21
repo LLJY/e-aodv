@@ -222,6 +222,8 @@ class E_RERR:
     failed_node_mac: str = ""
     originator_id: str = ""
     originator_mac: str = ""
+    broadcast_id: str = uuid.uuid4().hex
+    time_to_live: int = 1
     timestamp: str = field(default_factory=lambda: str(datetime.now()))
     reason: Optional[str] = None
 
@@ -231,6 +233,7 @@ class E_RERR:
             failed_node_mac: str,
             originator_id: str,
             originator_mac: str,
+            time_to_live: int,
             reason: Optional[str] = None
     ) -> None:
         """
@@ -241,6 +244,7 @@ class E_RERR:
         self.originator_id = originator_id
         self.originator_mac = originator_mac
         self.reason = reason
+        self.time_to_live = time_to_live
         self.timestamp = str(datetime.now())
 
 
