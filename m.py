@@ -1060,7 +1060,7 @@ class EAODVDemo:
 
     def visualize_network(self):
         """
-        Generate and display a network topology visualization as PNG.
+        Generate and display a network topology visualization with capability information.
         """
         if not HAS_VISUALIZATION:
             self._clear_screen()
@@ -1072,7 +1072,7 @@ class EAODVDemo:
 
         self._clear_screen()
         print("\n=== Network Visualization ===")
-        print("Generating network topology visualization...")
+        print("Generating enhanced network topology visualization with capabilities...")
 
         # Get the network topology
         topology = self.eaodv.get_network_topology()
@@ -1086,15 +1086,42 @@ class EAODVDemo:
             # Create a networkx graph
             G = nx.Graph()
 
-            # Add nodes
+            # Track node capabilities for visualization
+            node_capabilities = {}
+
+            # Add nodes with capability information
             for node in topology["nodes"]:
                 node_id = node.get("id") or node.get("mac", "Unknown")
                 is_local = node.get("is_local", False)
+                capabilities = node.get("capabilities", {})
 
-                # Set node attributes
+                # Extract key capabilities for display
+                sensor_types = []
+                writable_types = []
+
+                for cap, enabled in capabilities.items():
+                    if cap.endswith("_writable") and enabled:
+                        # This is a writable capability
+                        sensor_name = cap.replace("_writable", "")
+                        writable_types.append(sensor_name)
+                    elif not cap.endswith("_value") and not cap.endswith("_writable") and enabled:
+                        # This is a regular sensor/capability
+                        sensor_types.append(cap)
+
+                # Store capabilities for node
+                node_capabilities[node_id] = {
+                    "sensors": sensor_types,
+                    "writable": writable_types,
+                    "total": len(sensor_types) + len(writable_types)
+                }
+
+                # Set node attributes including capabilities
                 attrs = {
                     "mac": node.get("mac", ""),
-                    "is_local": is_local
+                    "is_local": is_local,
+                    "sensors": sensor_types,
+                    "writable": writable_types,
+                    "capabilities": capabilities
                 }
 
                 # Add the node
@@ -1117,35 +1144,87 @@ class EAODVDemo:
                 G.add_edge(source_id, target_id)
 
             # Create the figure
-            plt.figure(figsize=(10, 8))
+            plt.figure(figsize=(12, 10))
 
             # Get positions (layout)
-            pos = nx.spring_layout(G)
+            pos = nx.spring_layout(G, seed=42)  # Fixed seed for consistent layouts
 
-            # Draw nodes
+            # Prepare node visualization attributes based on capabilities
             node_colors = []
             node_sizes = []
+            node_shapes = []
 
             for node in G.nodes():
+                # Base size on number of capabilities
+                num_capabilities = node_capabilities[node].get("total", 0)
+                base_size = 500 + (num_capabilities * 50)  # Larger nodes have more capabilities
+
                 if G.nodes[node].get("is_local", False):
                     node_colors.append('red')  # Local node is red
-                    node_sizes.append(800)  # And larger
-                else:
+                    node_sizes.append(base_size * 1.2)  # And larger
+                    node_shapes.append('o')  # Circle for local node
+                elif len(G.nodes[node].get("writable", [])) > 0:
+                    # Nodes with writable capabilities
+                    node_colors.append('green')  # Writable nodes are green
+                    node_sizes.append(base_size)
+                    node_shapes.append('s')  # Square for writable nodes
+                elif len(G.nodes[node].get("sensors", [])) > 0:
+                    # Nodes with sensors but not writable
                     node_colors.append('skyblue')
-                    node_sizes.append(500)
+                    node_sizes.append(base_size)
+                    node_shapes.append('o')  # Circle for sensor nodes
+                else:
+                    # Nodes without known capabilities
+                    node_colors.append('lightgray')
+                    node_sizes.append(base_size * 0.8)  # Smaller for unknown capability nodes
+                    node_shapes.append('o')
 
-            nx.draw_networkx_nodes(G, pos,
-                                   node_color=node_colors,
-                                   node_size=node_sizes)
+            # Draw nodes for each shape type separately
+            for shape in set(node_shapes):
+                # Filter nodes by shape
+                shape_nodes = [node for i, node in enumerate(G.nodes()) if node_shapes[i] == shape]
+                if not shape_nodes:
+                    continue
+
+                # Get attributes for these nodes
+                node_indices = [list(G.nodes()).index(node) for node in shape_nodes]
+                shape_colors = [node_colors[i] for i in node_indices]
+                shape_sizes = [node_sizes[i] for i in node_indices]
+
+                # Draw this shape group
+                nx.draw_networkx_nodes(G, pos,
+                                       nodelist=shape_nodes,
+                                       node_color=shape_colors,
+                                       node_size=shape_sizes,
+                                       node_shape=shape)
 
             # Draw edges
             nx.draw_networkx_edges(G, pos, width=2, alpha=0.7, edge_color='gray')
 
-            # Draw labels
-            nx.draw_networkx_labels(G, pos, font_size=10, font_family='sans-serif')
+            # Draw labels with capability counts
+            custom_labels = {}
+            for node in G.nodes():
+                sensors = G.nodes[node].get("sensors", [])
+                writable = G.nodes[node].get("writable", [])
+                if sensors or writable:
+                    if writable:
+                        custom_labels[node] = f"{node}\n({len(sensors)}S, {len(writable)}W)"
+                    else:
+                        custom_labels[node] = f"{node}\n({len(sensors)}S)"
+                else:
+                    custom_labels[node] = node
+
+            nx.draw_networkx_labels(G, pos, labels=custom_labels, font_size=10, font_family='sans-serif')
+
+            # Add legend
+            plt.plot([], [], 'ro', markersize=10, label='Local Node')
+            plt.plot([], [], 'o', color='skyblue', markersize=10, label='Sensor Node')
+            plt.plot([], [], 's', color='green', markersize=10, label='Writable Node')
+            plt.plot([], [], 'o', color='lightgray', markersize=10, label='Unknown Capabilities')
+            plt.legend(loc='upper right')
 
             # Add a title
-            plt.title(f'E-AODV Network Topology - Node: {self.node_id}')
+            plt.title(f'E-AODV Network Topology with Capabilities - Node: {self.node_id}')
             plt.axis('off')  # Turn off axis
 
             # Create a temporary file
@@ -1201,32 +1280,68 @@ class EAODVDemo:
                         hoverinfo='none',
                         mode='lines')
 
-                    # Create node traces - SEPARATE TRACES FOR BETTER CONTROL
-                    local_nodes_x = []
-                    local_nodes_y = []
-                    local_nodes_text = []
-                    remote_nodes_x = []
-                    remote_nodes_y = []
-                    remote_nodes_text = []
+                    # Create different node groups by capabilities
+                    local_node_data = {"x": [], "y": [], "text": [], "hovertext": []}
+                    sensor_node_data = {"x": [], "y": [], "text": [], "hovertext": []}
+                    writable_node_data = {"x": [], "y": [], "text": [], "hovertext": []}
+                    unknown_node_data = {"x": [], "y": [], "text": [], "hovertext": []}
 
-                    # Populate node data
+                    # Populate node data groups
                     for node in G.nodes():
                         x, y = pos[node]
-                        node_attrs = G.nodes[node]
-                        hover_text = f"ID: {node}<br>MAC: {node_attrs.get('mac', 'Unknown')}"
+                        is_local = G.nodes[node].get("is_local", False)
+                        mac = G.nodes[node].get("mac", "Unknown")
+                        capabilities = G.nodes[node].get("capabilities", {})
+                        sensors = G.nodes[node].get("sensors", [])
+                        writable = G.nodes[node].get("writable", [])
 
-                        if node_attrs.get("is_local", False):
-                            local_nodes_x.append(x)
-                            local_nodes_y.append(y)
-                            local_nodes_text.append(hover_text)
+                        # Basic node text
+                        node_text = node
+
+                        # Detailed hover text with capability info
+                        hover_text = f"<b>ID:</b> {node}<br><b>MAC:</b> {mac}"
+
+                        # Add capability details to hover text
+                        if sensors or writable:
+                            hover_text += "<br><br><b>Capabilities:</b>"
+                            if sensors:
+                                hover_text += f"<br>- Sensors: {', '.join(sensors)}"
+                            if writable:
+                                hover_text += f"<br>- Writable: {', '.join(writable)}"
+
+                            # Add any sensor values if available
+                            for cap, value in capabilities.items():
+                                if cap.endswith("_value"):
+                                    sensor_name = cap.replace("_value", "")
+                                    hover_text += f"<br>- {sensor_name}: {value}"
                         else:
-                            remote_nodes_x.append(x)
-                            remote_nodes_y.append(y)
-                            remote_nodes_text.append(hover_text)
+                            hover_text += "<br><br>No known capabilities"
+
+                        # Add to appropriate group based on node type
+                        if is_local:
+                            local_node_data["x"].append(x)
+                            local_node_data["y"].append(y)
+                            local_node_data["text"].append(node_text)
+                            local_node_data["hovertext"].append(hover_text)
+                        elif writable:
+                            writable_node_data["x"].append(x)
+                            writable_node_data["y"].append(y)
+                            writable_node_data["text"].append(node_text)
+                            writable_node_data["hovertext"].append(hover_text)
+                        elif sensors:
+                            sensor_node_data["x"].append(x)
+                            sensor_node_data["y"].append(y)
+                            sensor_node_data["text"].append(node_text)
+                            sensor_node_data["hovertext"].append(hover_text)
+                        else:
+                            unknown_node_data["x"].append(x)
+                            unknown_node_data["y"].append(y)
+                            unknown_node_data["text"].append(node_text)
+                            unknown_node_data["hovertext"].append(hover_text)
 
                     # Create trace for the local node (red)
                     local_node_trace = go.Scatter(
-                        x=local_nodes_x, y=local_nodes_y,
+                        x=local_node_data["x"], y=local_node_data["y"],
                         mode='markers+text',
                         name='Local Node',
                         marker=dict(
@@ -1234,31 +1349,77 @@ class EAODVDemo:
                             size=20,
                             line=dict(width=2, color='darkred')
                         ),
-                        text=local_nodes_text,
-                        textposition="top center",
-                        hoverinfo='text'
+                        text=local_node_data["text"],
+                        hovertext=local_node_data["hovertext"],
+                        hoverinfo='text',
+                        textposition="top center"
                     )
 
-                    # Create trace for remote nodes (blue)
-                    remote_node_trace = go.Scatter(
-                        x=remote_nodes_x, y=remote_nodes_y,
+                    # Create trace for sensor nodes (blue)
+                    sensor_node_trace = go.Scatter(
+                        x=sensor_node_data["x"], y=sensor_node_data["y"],
                         mode='markers+text',
-                        name='Remote Nodes',
+                        name='Sensor Nodes',
                         marker=dict(
                             color='skyblue',
                             size=15,
                             line=dict(width=1, color='darkblue')
                         ),
-                        text=remote_nodes_text,
-                        textposition="top center",
-                        hoverinfo='text'
+                        text=sensor_node_data["text"],
+                        hovertext=sensor_node_data["hovertext"],
+                        hoverinfo='text',
+                        textposition="top center"
                     )
 
-                    # Create figure with multiple traces
+                    # Create trace for writable nodes (green)
+                    writable_node_trace = go.Scatter(
+                        x=writable_node_data["x"], y=writable_node_data["y"],
+                        mode='markers+text',
+                        name='Writable Nodes',
+                        marker=dict(
+                            color='green',
+                            size=15,
+                            symbol='square',
+                            line=dict(width=1, color='darkgreen')
+                        ),
+                        text=writable_node_data["text"],
+                        hovertext=writable_node_data["hovertext"],
+                        hoverinfo='text',
+                        textposition="top center"
+                    )
+
+                    # Create trace for unknown capability nodes (gray)
+                    unknown_node_trace = go.Scatter(
+                        x=unknown_node_data["x"], y=unknown_node_data["y"],
+                        mode='markers+text',
+                        name='Unknown Capabilities',
+                        marker=dict(
+                            color='lightgray',
+                            size=12,
+                            line=dict(width=1, color='gray')
+                        ),
+                        text=unknown_node_data["text"],
+                        hovertext=unknown_node_data["hovertext"],
+                        hoverinfo='text',
+                        textposition="top center"
+                    )
+
+                    # Build list of traces - include only non-empty ones
+                    data_traces = [edge_trace]
+                    if unknown_node_data["x"]:
+                        data_traces.append(unknown_node_trace)
+                    if sensor_node_data["x"]:
+                        data_traces.append(sensor_node_trace)
+                    if writable_node_data["x"]:
+                        data_traces.append(writable_node_trace)
+                    if local_node_data["x"]:
+                        data_traces.append(local_node_trace)
+
+                    # Create figure with all traces
                     fig = go.Figure(
-                        data=[edge_trace, remote_node_trace, local_node_trace],
+                        data=data_traces,
                         layout=go.Layout(
-                            title=f'E-AODV Network Topology - Node: {self.node_id} ({len(G.nodes())} nodes)',
+                            title=f'E-AODV Network Topology with Capabilities - Node: {self.node_id}',
                             showlegend=True,
                             legend=dict(x=0, y=1.1),
                             hovermode='closest',
@@ -1288,7 +1449,8 @@ class EAODVDemo:
                     webbrowser.open('file://' + os.path.abspath(html_path))
 
                     print(f"Interactive visualization saved to: {html_path}")
-                    print(f"Displaying {len(G.nodes())} nodes and {len(G.edges())} connections")
+                    print(
+                        f"Displaying {len(G.nodes())} nodes and {len(G.edges())} connections with capability information")
 
                 except ImportError:
                     print("Could not generate interactive visualization.")
