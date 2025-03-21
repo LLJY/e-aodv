@@ -161,10 +161,11 @@ class SensorRegistry:
         return info
 
     def cleanup(self) -> None:
-        """Clean up resources used by sensors"""
-        for sensor in self.sensors.values():
-            try:
-                if hasattr(sensor, 'cleanup') and callable(sensor.cleanup):
+        """Clean up resources for all registered sensors."""
+        for name, sensor in self.sensors.items():
+            if hasattr(sensor, 'cleanup') and callable(sensor.cleanup):
+                try:
                     sensor.cleanup()
-            except Exception as e:
-                logger.error(f"Error cleaning up sensor {sensor.name}: {e}")
+                except Exception as e:
+                    logger.error(f"Error cleaning up sensor {name}: {e}")
+        logger.info("SensorRegistry cleanup complete.")

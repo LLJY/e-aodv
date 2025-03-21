@@ -27,6 +27,11 @@ class Sensor(ABC):
         """Read the current sensor value"""
         pass
 
+    @abstractmethod
+    def cleanup(self):
+        """Clean up the sensor"""
+        pass
+
     def write(self, value: Any) -> bool:
         """
         Write a value to the sensor (for actuators)
