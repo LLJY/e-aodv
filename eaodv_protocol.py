@@ -712,13 +712,37 @@ class EAODVProtocol:
             # Build reverse path from packet topology
             if e_rreq.packet_topology:
                 with self.state_lock:
+                    # Create a copy of the topology and reverse it
                     hops = e_rreq.packet_topology.copy()
+                    hops.reverse()
+
+                    # Remove duplicate nodes and loops
+                    cleaned_hops = []
+                    seen_macs = set()
+
+                    for hop in hops:
+                        # Skip if this is our own MAC (would create a loop)
+                        if hop.bt_mac_address == self.mac_address:
+                            continue
+
+                        # Skip if we've already seen this MAC (duplicate/loop)
+                        if hop.bt_mac_address in seen_macs:
+                            logger.warning(f"Removing duplicate node {hop.bt_mac_address} from route")
+                            continue
+
+                        # Add to cleaned list and track MAC
+                        cleaned_hops.append(hop)
+                        seen_macs.add(hop.bt_mac_address)
+
+                    # Update the route with cleaned hop list
                     self.aodv_state.add_or_update_route(
                         dest_mac=e_rreq.source_mac,
                         dest_id=e_rreq.source_id,
-                        hops=hops
+                        hops=cleaned_hops
                     )
-                    logger.debug(f"Updated route to {e_rreq.source_id} ({e_rreq.source_mac})")
+
+                    logger.debug(
+                        f"Updated route to {e_rreq.source_id} ({e_rreq.source_mac}) with {len(cleaned_hops)} hops")
         except Exception as e:
             logger.error(f"Error updating route to source: {e}")
 
@@ -1084,8 +1108,8 @@ class EAODVProtocol:
                 logger.warning(f"No topology data in reply from {source_id}")
                 return
 
+            # Build hop list
             hops = []
-
             for entry in topology_data:
                 if isinstance(entry, dict):
                     hop = TopologyEntry(
@@ -1095,27 +1119,47 @@ class EAODVProtocol:
                     )
                     hops.append(hop)
 
-            # Update route only if we have valid hop information
+            # Process and clean up the hop list
             if hops:
-                with self.state_lock:
-                    logger.info(f"Adding route to {source_id} ({source_mac}) with {len(hops)} hops")
-                    self.aodv_state.add_or_update_route(
-                        dest_mac=source_mac,
-                        dest_id=source_id,
-                        hops=hops
-                    )
+                # Remove duplicate nodes and loops
+                cleaned_hops = []
+                seen_macs = set()
 
-                    # Log the routing table state
-                    routes = []
-                    for route in self.aodv_state.routing_table:
-                        dest = route.host.bt_mac_address
-                        hop_count = len(route.hops)
-                        routes.append(f"{dest} ({hop_count} hops)")
+                for hop in hops:
+                    # Skip if this is our own MAC (would create a loop)
+                    if hop.bt_mac_address == self.mac_address:
+                        continue
 
-                    logger.info(
-                        f"Current routing table entries: {len(routes)} - {', '.join(routes) if routes else 'none'}")
-            else:
-                logger.warning(f"No hop information found in route reply from {source_id}")
+                    # Skip if we've already seen this MAC (duplicate/loop)
+                    if hop.bt_mac_address in seen_macs:
+                        logger.warning(f"Removing duplicate node {hop.bt_mac_address} from route")
+                        continue
+
+                    # Add to cleaned list and track MAC
+                    cleaned_hops.append(hop)
+                    seen_macs.add(hop.bt_mac_address)
+
+                # Update route only if we have valid hop information
+                if cleaned_hops:
+                    with self.state_lock:
+                        logger.info(f"Adding route to {source_id} ({source_mac}) with {len(cleaned_hops)} hops")
+                        self.aodv_state.add_or_update_route(
+                            dest_mac=source_mac,
+                            dest_id=source_id,
+                            hops=cleaned_hops
+                        )
+
+                        # Log the routing table state
+                        routes = []
+                        for route in self.aodv_state.routing_table:
+                            dest = route.host.bt_mac_address
+                            hop_count = len(route.hops)
+                            routes.append(f"{dest} ({hop_count} hops)")
+
+                        logger.info(
+                            f"Current routing table entries: {len(routes)} - {', '.join(routes) if routes else 'none'}")
+                else:
+                    logger.warning(f"No valid hop information found in route reply from {source_id}")
 
         except Exception as e:
             logger.error(f"Error processing route information: {e}")
@@ -1445,6 +1489,11 @@ class EAODVProtocol:
                 logger.error("Hello message missing BT MAC address")
                 return
 
+            # Check if this is a new node we haven't seen before
+            is_new_node = False
+            with self.state_lock:
+                is_new_node = not any(n.bt_mac_address == bt_mac_address for n in self.aodv_state.neighbours)
+
             # Update neighbor information
             with self.state_lock:
                 # Add/update neighbor
@@ -1467,7 +1516,6 @@ class EAODVProtocol:
                     for route_info in routing_knowledge:
                         dest = route_info.get("destination", {})
                         dest_mac = dest.get("bt_mac_address")
-                        dest_id = dest.get("node_id")
                         dest_capabilities = dest.get("capabilities")
                         if dest_capabilities and dest_mac:
                             self.node_capabilities[dest_mac] = dest_capabilities
@@ -1479,40 +1527,59 @@ class EAODVProtocol:
                                 dest_mac in self.bt_comm.connected_devices):
                             continue
 
-                        hops = []
+                        # Build a new route from scratch - MAJOR FIX HERE
+                        new_route = []
 
-                        # First hop is always the sender of the hello
+                        # CRITICAL: First hop must be the sender of the hello message
+                        # This is our direct connection to the route
                         sender_hop = TopologyEntry(
                             node_id=node_id,
                             bt_mac_address=bt_mac_address,
                             neighbors=initial_neighbors
                         )
-                        hops.append(sender_hop)
+                        new_route.append(sender_hop)
 
-                        # Add remaining hops from routing knowledge
+                        # Then add any additional hops from the route
+                        # but avoid loops, duplicates, and ensure they're in the correct order
                         has_loop = False
-                        for hop_info in route_info.get("hops", []):
+
+                        # Get the hops in the correct order (the order matters!)
+                        hop_list = route_info.get("hops", [])
+
+                        # Process each hop
+                        for hop_info in hop_list:
                             if isinstance(hop_info, dict):
                                 hop_mac = hop_info.get("bt_mac_address")
-                                hop_capabilities = hop_info.get("capabilities")
-                                if hop_capabilities and hop_mac:
-                                    self.node_capabilities[hop_mac] = hop_capabilities
-                                    logger.debug(f"Updated capabilities for hop node {hop_mac} from routing knowledge")
+                                hop_node_id = hop_info.get("node_id")
 
-                                # Check for routing loops
+                                # Skip adding this hop if it's the same as any existing hop
+                                if any(h.bt_mac_address == hop_mac for h in new_route):
+                                    continue
+
+                                # Skip if it's the sender (which we already added as first hop)
+                                if hop_mac == bt_mac_address:
+                                    continue
+
+                                # Check for routing loops involving our address
                                 if hop_mac == self.mac_address:
                                     has_loop = True
                                     break
 
+                                # Get capabilities if available
+                                hop_capabilities = hop_info.get("capabilities")
+                                if hop_capabilities and hop_mac:
+                                    self.node_capabilities[hop_mac] = hop_capabilities
+
+                                # Add this hop to our route
                                 hop = TopologyEntry(
-                                    node_id=hop_info.get("node_id"),
+                                    node_id=hop_node_id,
                                     bt_mac_address=hop_mac,
                                     neighbors=hop_info.get("neighbors", [])
                                 )
-                                hops.append(hop)
+                                new_route.append(hop)
 
                         # Only add route if no loops were detected and we have valid hops
-                        if not has_loop and hops:
+                        if not has_loop and new_route:
                             # Check if we already have a better route
                             existing_route = next(
                                 (r for r in self.aodv_state.routing_table if r.host.bt_mac_address == dest_mac),
@@ -1522,18 +1589,22 @@ class EAODVProtocol:
                             # Add or update route if:
                             # 1. We don't have an existing route, or
                             # 2. This route is shorter than our existing route
-                            if not existing_route or len(hops) < len(existing_route.hops):
+                            if not existing_route or len(new_route) < len(existing_route.hops):
                                 self.aodv_state.add_or_update_route(
                                     dest_mac=dest_mac,
-                                    dest_id=dest_id,
-                                    hops=hops
+                                    dest_id=dest.get("node_id"),
+                                    hops=new_route
                                 )
                                 routes_added += 1
+
+                                # Log the constructed route for debugging
+                                hop_description = " -> ".join([f"{h.node_id or h.bt_mac_address}" for h in new_route])
+                                logger.info(f"Added route to {dest.get('node_id') or dest_mac} via: {hop_description}")
 
                     if routes_added > 0:
                         logger.info(f"Added/updated {routes_added} routes from hello message")
 
-            # Log capabilities and sensor data as in the original implementation
+            # Log capabilities and sensor data
             temp_log = ""
             if "temperature_value" in capabilities:
                 temp_log = f", Temperature: {capabilities['temperature_value']}°C"
@@ -1566,6 +1637,11 @@ class EAODVProtocol:
             if sensor_data:
                 sensor_str = ", ".join([f"{k}: {v}" for k, v in sensor_data.items()])
                 logger.info(f"Received sensor data from {node_id}: {sensor_str}")
+
+            # If this is a new node, send our network configuration to it
+            # if is_new_node:
+            #     logger.info(f"New node detected: {node_id} ({bt_mac_address}). Syncing network configuration...")
+            #     self._sync_config_to_new_node(bt_mac_address)
 
         except Exception as e:
             logger.error(f"Error handling hello message: {e}")
@@ -1682,20 +1758,65 @@ class EAODVProtocol:
             e_rrep.response_data = response_data
 
             # Update routing table based on the RREQ packet topology
+            # Update routing table based on the RREQ packet topology
             if e_rreq.packet_topology:
+                # Create a copy of the topology and reverse it
                 hops = []
                 for entry in e_rreq.packet_topology:
                     if hasattr(entry, 'bt_mac_address'):
                         hops.append(entry)
 
-                # Add route to the source - this allows us to route responses back
-                if hops:
+                # IMPORTANT FIX: Reverse the hops to create route from current node to source
+                hops.reverse()
+
+                # Remove duplicate nodes and loops
+                cleaned_hops = []
+                seen_macs = set()
+
+                for hop in hops:
+                    # Skip if this is our own MAC (would create a loop)
+                    if hop.bt_mac_address == self.mac_address:
+                        continue
+
+                    # Skip if we've already seen this MAC (duplicate/loop)
+                    if hop.bt_mac_address in seen_macs:
+                        logger.warning(f"Removing duplicate node {hop.bt_mac_address} from route")
+                        continue
+
+                    # Add to cleaned list and track MAC
+                    cleaned_hops.append(hop)
+                    seen_macs.add(hop.bt_mac_address)
+
+                # Ensure the first hop is correct for this route
+                if cleaned_hops and cleaned_hops[0].bt_mac_address != sender_address:
+                    # First check if the sender is already in our hop list
+                    sender_in_hops = False
+                    for i, hop in enumerate(cleaned_hops):
+                        if hop.bt_mac_address == sender_address:
+                            # Move sender to front
+                            cleaned_hops.insert(0, cleaned_hops.pop(i))
+                            sender_in_hops = True
+                            break
+
+                    if not sender_in_hops:
+                        # Add sender as first hop
+                        from e_aodv_models import TopologyEntry
+                        sender_entry = TopologyEntry(
+                            node_id=None,  # We might not know the ID
+                            bt_mac_address=sender_address,
+                            neighbors=[]
+                        )
+                        cleaned_hops.insert(0, sender_entry)
+
+                # Add route to the source
+                if cleaned_hops:
                     with self.state_lock:
-                        logger.info(f"Updating route to {e_rreq.source_id} ({e_rreq.source_mac}) with {len(hops)} hops")
+                        logger.info(
+                            f"Updating route to {e_rreq.source_id} ({e_rreq.source_mac}) with {len(cleaned_hops)} hops")
                         self.aodv_state.add_or_update_route(
                             dest_mac=e_rreq.source_mac,
                             dest_id=e_rreq.source_id,
-                            hops=hops
+                            hops=cleaned_hops
                         )
 
             # Convert to JSON for sending
