@@ -220,7 +220,8 @@ class EAODVDemo:
         print("8. Query node data")
         print("9. Write data to node")
         print("10. Configure network")
-        print("11. Quit")
+        print("11. Create network diagram")
+        print("12. Quit")
     
     def _print_log_window(self):
         """Print recent log messages in a scrollable window"""
@@ -809,7 +810,7 @@ class EAODVDemo:
                     writable_sensors.append(sensor_name)
 
         # Add traditional writable capabilities for backward compatibility
-        traditional_writables = ["led", "motor", "display"]
+        # traditional_writables = ["led", "motor", "display"]
 
         # Show write options
         print("\nAvailable write options:")
@@ -818,25 +819,8 @@ class EAODVDemo:
 
         # First show all detected writable sensors
         for sensor in writable_sensors:
-            if sensor not in traditional_writables:  # Avoid duplicates
-                print(f"{option_num}. {sensor.title()} Sensor")
-                sensor_options.append(sensor)
-                option_num += 1
-
-        # Then add traditional options if they aren't already included
-        if "led" not in writable_sensors:
-            print(f"{option_num}. LED")
-            sensor_options.append("led")
-            option_num += 1
-
-        if "motor" not in writable_sensors:
-            print(f"{option_num}. Motor")
-            sensor_options.append("motor")
-            option_num += 1
-
-        if "display" not in writable_sensors:
-            print(f"{option_num}. Display")
-            sensor_options.append("display")
+            print(f"{option_num}. {sensor.title()} Sensor")
+            sensor_options.append(sensor)
             option_num += 1
 
         if not sensor_options:
