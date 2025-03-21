@@ -21,6 +21,8 @@ from sensors.sensor_registry import SensorRegistry
 from sensors.sensor import Sensor
 from sensors.cpu_temperature import CPUTemperatureSensor
 
+from sensors.phy_sensors import initialize_sensors
+
 # Import EAODV protocol
 from eaodv_protocol import EAODVProtocol, OperationType
 
@@ -80,6 +82,7 @@ class EAODVDemo:
         
         self.sensor_registry = SensorRegistry()
         self.sensor_registry.register_sensor(CPUTemperatureSensor(True))
+        initialize_sensors(self.sensor_registry, False)
         # Create protocol instance with capabilities
         self.eaodv = EAODVProtocol(
             node_id=node_id,
