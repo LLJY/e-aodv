@@ -66,6 +66,7 @@ class EAODVProtocol:
         self.device_name = f"EAODV-{node_id}"
         self.auto_discovery = auto_discovery
         self.broadcasts = []
+        self.node_capabilities = {}
 
         # Initialize raw capabilities (will be updated with sensor data)
         self.capabilities = capabilities or {}
@@ -355,23 +356,39 @@ class EAODVProtocol:
             neighbor_macs = [n.bt_mac_address for n in self.aodv_state.neighbours]
 
             # Create simplified routing knowledge to share
+            # When creating the routing_knowledge in _create_hello_message
             routing_knowledge = []
             for route in self.aodv_state.routing_table:
-                # Only share routes with reasonable hop counts to avoid excessive data
+                # Only share routes with reasonable hop counts
                 if len(route.hops) <= 3:  # Limit to routes with 3 or fewer hops
                     hop_list = []
                     for hop in route.hops:
-                        hop_list.append({
+                        hop_info = {
                             "node_id": hop.node_id,
                             "bt_mac_address": hop.bt_mac_address,
                             "neighbors": hop.neighbors
-                        })
+                        }
+
+                        # Add capability information if available
+                        hop_capabilities = self.node_capabilities.get(hop.bt_mac_address, {})
+                        if hop_capabilities:
+                            hop_info["capabilities"] = hop_capabilities
+
+                        hop_list.append(hop_info)
+
+                    # Add destination with capabilities
+                    dest_info = {
+                        "node_id": route.host.node_id,
+                        "bt_mac_address": route.host.bt_mac_address
+                    }
+
+                    # Add capability information for destination if available
+                    dest_capabilities = self.node_capabilities.get(route.host.bt_mac_address, {})
+                    if dest_capabilities:
+                        dest_info["capabilities"] = dest_capabilities
 
                     routing_knowledge.append({
-                        "destination": {
-                            "node_id": route.host.node_id,
-                            "bt_mac_address": route.host.bt_mac_address
-                        },
+                        "destination": dest_info,
                         "hops": hop_list,
                         "timestamp": str(time.time())
                     })
@@ -1428,7 +1445,8 @@ class EAODVProtocol:
                 )
 
                 # Store neighbor capabilities
-                self.neighbor_capabilities[bt_mac_address] = capabilities
+                self.node_capabilities[bt_mac_address] = capabilities
+                self.neighbor_capabilities[bt_mac_address] = capabilities  # Keep for backward compatibility
 
                 # Process routing knowledge from hello message
                 if routing_knowledge:
@@ -1439,7 +1457,10 @@ class EAODVProtocol:
                     for route_info in routing_knowledge:
                         dest = route_info.get("destination", {})
                         dest_mac = dest.get("bt_mac_address")
-                        dest_id = dest.get("node_id")
+                        dest_capabilities = dest.get("capabilities")
+                        if dest_capabilities and dest_mac:
+                            self.node_capabilities[dest_mac] = dest_capabilities
+                            logger.debug(f"Updated capabilities for remote node {dest_mac} from routing knowledge")
 
                         # Skip invalid routes, routes to self, or routes we already have direct connections to
                         if (not dest_mac or
@@ -1461,7 +1482,11 @@ class EAODVProtocol:
                         has_loop = False
                         for hop_info in route_info.get("hops", []):
                             if isinstance(hop_info, dict):
-                                hop_mac = hop_info.get("bt_mac_address", "")
+                                hop_mac = hop_info.get("bt_mac_address")
+                                hop_capabilities = hop_info.get("capabilities")
+                                if hop_capabilities and hop_mac:
+                                    self.node_capabilities[hop_mac] = hop_capabilities
+                                    logger.debug(f"Updated capabilities for hop node {hop_mac} from routing knowledge")
 
                                 # Check for routing loops
                                 if hop_mac == self.mac_address:
@@ -2547,7 +2572,7 @@ class EAODVProtocol:
                         "id": neighbor.node_id or mac,
                         "mac": mac,
                         "is_local": False,
-                        "capabilities": self.neighbor_capabilities.get(mac, {})
+                        "capabilities": self.node_capabilities.get(mac, {}) or self.neighbor_capabilities.get(mac, {})
                     })
                     added_nodes.add(mac)
 
@@ -2580,7 +2605,8 @@ class EAODVProtocol:
                     topology["nodes"].append({
                         "id": route.host.node_id or dest_mac,
                         "mac": dest_mac,
-                        "is_local": False
+                        "is_local": False,
+                        "capabilities": self.node_capabilities.get(dest_mac, {})
                     })
                     added_nodes.add(dest_mac)
 
@@ -2595,7 +2621,7 @@ class EAODVProtocol:
                             "id": hop.node_id or hop_mac,
                             "mac": hop_mac,
                             "is_local": False,
-                            "capabilities": self.neighbor_capabilities.get(hop_mac, {})
+                            "capabilities": self.node_capabilities.get(hop_mac, {})
                         })
                         added_nodes.add(hop_mac)
 
