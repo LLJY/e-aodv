@@ -1,6 +1,5 @@
-bleak==0.22.3
 PyBluez==0.30
 networkx~=3.4.2
 matplotlib~=3.10.1
 pyserial~=3.5
-Adafruit_DHT~=1.4.0
+adafruit-circuitpython-dht~=4.0.7
