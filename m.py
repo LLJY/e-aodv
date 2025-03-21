@@ -588,18 +588,25 @@ class EAODVDemo:
         print("\nQuery types:")
         query_options = []
         option_num = 1
-
+        print(json.dumps(caps_result, indent=2))
         # Add available sensors based on capabilities
         if caps_result["success"] and "capabilities" in caps_result["data"]:
+            print("\nDEBUG - Raw capabilities data:")
+            print(json.dumps(caps_result["data"]["capabilities"], indent=2))
             caps = caps_result["data"]["capabilities"]
-            for cap, enabled in caps.items():
-                # Skip internal or disabled capabilities
-                if cap.endswith("_writable") or cap == "temperature_value" or not enabled:
-                    continue
 
-                # Add sensor to query options
-                print(f"{option_num}. {cap.title()}")
-                query_options.append(f"sensor:{cap}")
+            # First pass: Find all sensor capabilities
+            sensor_capabilities = set()
+            for cap, enabled in caps.items():
+                # Skip metadata fields and disabled capabilities
+                if cap.endswith("_writable") or cap.endswith("_value") or not enabled:
+                    continue
+                sensor_capabilities.add(cap)
+
+            # Add each sensor capability as a query option
+            for sensor in sorted(sensor_capabilities):
+                print(f"{option_num}. {sensor.title()}")
+                query_options.append(f"sensor:{sensor}")
                 option_num += 1
 
         # Add standard query types

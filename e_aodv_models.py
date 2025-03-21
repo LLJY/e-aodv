@@ -164,6 +164,7 @@ class E_RREP:
     destination_id: str = ""
     destination_mac: str = ""
     broadcast_id: str = ""
+    original_request_id: str = ""  # Add field to track original request ID
     sequence_number: int = 0
     hop_count: int = 0
     timestamp: str = ""
@@ -183,30 +184,15 @@ class E_RREP:
             source_mac=erreq.destination_mac or "",
             destination_id=erreq.source_id,
             destination_mac=erreq.source_mac,
-            broadcast_id=uuid.uuid4().hex,
+            original_request_id=erreq.broadcast_id,  # Track original request ID for correlation
+            broadcast_id=uuid.uuid4().hex,  # Always use new ID to avoid duplicate detection
             sequence_number=erreq.sequence_number,
             hop_count=erreq.hop_count,
             timestamp=str(datetime.now()),
-            packet_topology=copy.deepcopy(erreq.packet_topology),  # deep copy of the list
-            operation_type=erreq.operation_type,  # Copy operation type
-            response_data={}  # Initialize empty response data
+            packet_topology=copy.deepcopy(erreq.packet_topology),
+            operation_type=erreq.operation_type,
+            response_data={}
         )
-
-    def prepare_reply(self, node_mac: str, node_id: Optional[str], neighbors: List[str]) -> None:
-        """
-        Called by intermediate nodes (or the final node) when building
-        or updating the E_RREP on its way back to the source.
-        Increments the hop count, updates the timestamp, and appends new topology info.
-        """
-        self.hop_count += 1
-        self.timestamp = str(datetime.now())
-
-        new_entry = TopologyEntry(
-            node_id=node_id,
-            bt_mac_address=node_mac,
-            neighbors=neighbors
-        )
-        self.packet_topology.append(new_entry)
 
 
 @dataclass
@@ -422,11 +408,11 @@ if __name__ == "__main__":
 
     # Create an E-RREP from the query E-RREQ (for demonstration)
     e_rrep = E_RREP.from_erreq(query_req)
-    e_rrep.prepare_reply(
-        node_mac="AA:BB:CC:DD:EE:02",
-        node_id="node-C",
-        neighbors=["node-D", "node-E"]
-    )
+    # e_rrep.prepare_reply(
+    #     node_mac="AA:BB:CC:DD:EE:02",
+    #     node_id="node-C",
+    #     neighbors=["node-D", "node-E"]
+    # )
     # Add response data for the query
     e_rrep.response_data = {"temperature": 24.5, "status": "ok"}
 

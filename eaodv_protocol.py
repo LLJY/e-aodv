@@ -902,12 +902,12 @@ class EAODVProtocol:
             e_rrep.source_id = self.node_id
             e_rrep.source_mac = self.mac_address
 
-            # Prepare the reply with our information
-            e_rrep.prepare_reply(
-                node_mac=self.mac_address,
-                node_id=self.node_id,
-                neighbors=neighbor_macs
-            )
+            # # Prepare the reply with our information (this method doesn't exist)
+            # e_rrep.prepare_reply(
+            #     node_mac=self.mac_address,
+            #     node_id=self.node_id,
+            #     neighbors=neighbor_macs
+            # )
 
             # Convert to JSON for sending - FIX SERIALIZATION HERE
             rrep_data = {
@@ -962,10 +962,6 @@ class EAODVProtocol:
     def _handle_route_reply(self, sender_address: str, message_data: Dict[str, Any]):
         """
         Handle an incoming route reply (E-RREP).
-
-        Args:
-            sender_address: MAC address of the sender
-            message_data: Decoded E-RREP message
         """
         try:
             # Extract basic information from the reply
@@ -984,13 +980,27 @@ class EAODVProtocol:
                                                                                    OperationType] else "UNKNOWN"
                 logger.info(f"Received E-RREP ({op_type}) destined for us from {source_mac}")
 
-                # Call callback based on operation type
+                # Get both broadcast IDs
                 broadcast_id = message_data.get("broadcast_id", "")
+                original_request_id = message_data.get("original_request_id", "")
 
                 # Handle query responses
                 if operation_type == OperationType.QUERY.value:
                     with self.query_lock:
-                        query_callback = self.pending_queries.pop(broadcast_id, None)
+                        # Try to find callback using original_request_id first
+                        query_callback = None
+
+                        if original_request_id:
+                            query_callback = self.pending_queries.pop(original_request_id, None)
+                            if query_callback:
+                                logger.info(f"Found query callback using original_request_id: {original_request_id}")
+
+                        # Fall back to broadcast_id if original_request_id didn't work
+                        if query_callback is None:
+                            query_callback = self.pending_queries.pop(broadcast_id, None)
+                            if query_callback:
+                                logger.info(f"Found query callback using broadcast_id: {broadcast_id}")
+
                         if query_callback:
                             try:
                                 response_data = message_data.get("response_data", {}) or {}
@@ -1013,7 +1023,9 @@ class EAODVProtocol:
                                 logger.error(f"Error calling query callback: {e}")
                                 import traceback
                                 logger.error(traceback.format_exc())
-
+                        else:
+                            logger.warning(
+                                f"No callback found for query response with ID: {original_request_id or broadcast_id}")
             else:
                 # Forward the reply towards the destination
                 self._forward_route_reply(message_data, sender_address)
@@ -1174,6 +1186,9 @@ class EAODVProtocol:
 
             # Find next hop towards destination
             next_hop = self._find_next_hop_to_destination(dest_mac)
+
+            if "original_request_id" in reply_data:
+                reply_data["original_request_id"] = reply_data["original_request_id"]
 
             if next_hop:
                 # Send to next hop
@@ -1543,11 +1558,11 @@ class EAODVProtocol:
             e_rrep.source_mac = self.mac_address
 
             # Prepare the reply with our information
-            e_rrep.prepare_reply(
-                node_mac=self.mac_address,
-                node_id=self.node_id,
-                neighbors=neighbor_macs
-            )
+            # e_rrep.prepare_reply(
+            #     node_mac=self.mac_address,
+            #     node_id=self.node_id,
+            #     neighbors=neighbor_macs
+            # )
 
             # Process the query
             query_params = e_rreq.query_params if e_rreq.query_params else {}
@@ -1655,6 +1670,7 @@ class EAODVProtocol:
                 "destination_id": e_rrep.destination_id,
                 "destination_mac": e_rrep.destination_mac,
                 "broadcast_id": e_rrep.broadcast_id,
+                "original_request_id": e_rrep.original_request_id,
                 "sequence_number": e_rrep.sequence_number,
                 "hop_count": e_rrep.hop_count,
                 "timestamp": e_rrep.timestamp,
@@ -1693,6 +1709,7 @@ class EAODVProtocol:
             import traceback
             logger.error(traceback.format_exc())
 
+
     def _handle_write_request(self, e_rreq: E_RREQ, sender_address: str):
         """
         Handle a write request.
@@ -1715,11 +1732,11 @@ class EAODVProtocol:
             e_rrep.source_mac = self.mac_address
 
             # Prepare the reply with our information
-            e_rrep.prepare_reply(
-                node_mac=self.mac_address,
-                node_id=self.node_id,
-                neighbors=neighbor_macs
-            )
+            # e_rrep.prepare_reply(
+            #     node_mac=self.mac_address,
+            #     node_id=self.node_id,
+            #     neighbors=neighbor_macs
+            # )
 
             # Process the write request
             write_params = e_rreq.query_params
@@ -1785,6 +1802,9 @@ class EAODVProtocol:
                 response_data["status"] = "error"
                 response_data["message"] = "No valid write parameters found"
 
+            if "original_request_id" in response_data:
+                response_data["original_request_id"] = response_data["original_request_id"]
+
             # Set response data
             e_rrep.response_data = response_data
 
@@ -1836,11 +1856,11 @@ class EAODVProtocol:
             e_rrep.source_mac = self.mac_address
 
             # Prepare the reply with our information
-            e_rrep.prepare_reply(
-                node_mac=self.mac_address,
-                node_id=self.node_id,
-                neighbors=neighbor_macs
-            )
+            # e_rrep.prepare_reply(
+            #     node_mac=self.mac_address,
+            #     node_id=self.node_id,
+            #     neighbors=neighbor_macs
+            # )
 
             # Process the configuration request
             config_params = e_rreq.query_params
@@ -1886,6 +1906,7 @@ class EAODVProtocol:
                 "destination_id": e_rrep.destination_id,
                 "destination_mac": e_rrep.destination_mac,
                 "broadcast_id": e_rrep.broadcast_id,
+                "original_request_id": e_rrep.original_request_id,
                 "sequence_number": e_rrep.sequence_number,
                 "hop_count": e_rrep.hop_count,
                 "timestamp": e_rrep.timestamp,
