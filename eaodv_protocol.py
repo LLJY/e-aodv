@@ -1948,35 +1948,48 @@ class EAODVProtocol:
                 "timestamp": e_rrep.timestamp,
                 "operation_type": e_rrep.operation_type,
                 "response_data": e_rrep.response_data,
-                "packet_topology": [asdict(entry) for entry in e_rrep.packet_topology]
-                if hasattr(e_rrep.packet_topology[0], 'asdict') else e_rrep.packet_topology
+                "packet_topology": []
             }
+
+            # Add properly serialized topology data if available
+            if e_rrep.packet_topology:
+                topology_entries = []
+                for entry in e_rrep.packet_topology:
+                    if hasattr(entry, 'asdict'):
+                        topology_entries.append(asdict(entry))
+                    else:
+                        topology_entries.append({
+                            "node_id": entry.node_id if hasattr(entry, "node_id") else None,
+                            "bt_mac_address": entry.bt_mac_address if hasattr(entry, "bt_mac_address") else "",
+                            "neighbors": entry.neighbors if hasattr(entry, "neighbors") else []
+                        })
+                rrep_data["packet_topology"] = topology_entries
 
             # Send to the previous hop
             self.bt_comm.send_json(sender_address, rrep_data)
             logger.info(f"Sent configuration response to {sender_address}")
 
             # If any parameters were updated, also forward the config to all neighbors
-            if response_data["updated_params"] and not e_rreq.query_params.get("no_propagate", False):
-                self._propagate_config_to_neighbors(config_params, e_rreq.source_id, e_rreq.broadcast_id)
+            if response_data["updated_params"]:
+                logger.info(f"Configuration changes applied, forwarding to network")
+
+                # Use the regular broadcast deduplication mechanism
+                # Forward to all nodes except the one who sent us the config
+                self._propagate_config_to_neighbors(e_rreq.query_params, sender_address)
 
         except Exception as e:
             logger.error(f"Error handling config request: {e}")
 
-    def _propagate_config_to_neighbors(self, config_params: Dict[str, Any], source_id: str):
+    def _propagate_config_to_neighbors(self, config_params: Dict[str, Any], source_mac: str):
         """
         Propagate configuration changes to neighbors.
 
         Args:
             config_params: Configuration parameters to propagate
-            original_broadcast_id: Broadcast ID of the original request (to avoid loops)
+            source_mac: MAC address of the source node (to avoid sending back to it)
         """
         try:
             logger.info("Propagating network configuration to neighbors")
-
-            # Add no_propagate flag to avoid infinite loop
-            propagation_params = config_params.copy()
-            propagation_params["no_propagate"] = True
 
             # Get connected devices
             with self.state_lock:
@@ -1986,20 +1999,32 @@ class EAODVProtocol:
                 logger.warning("No connected devices to propagate configuration to")
                 return
 
-            logger.info(f"Propagating configuration to {len(connected_devices)} devices: {connected_devices}")
-
             # Increment sequence number
             with self.state_lock:
                 self.aodv_state.increment_sequence_number()
                 sequence_number = self.aodv_state.sequence_number
 
-            # Create a configuration request for each neighbor
+            # Create a copy of the config params for propagation
+            propagation_params = config_params.copy()
+
+            # Use the default TTL from network configuration
+            # This allows the propagation distance to be controlled via the normal TTL parameter
+            propagation_ttl = self.network_config.ttl_default
+
+            logger.info(f"Propagating configuration to {len(connected_devices)} devices with TTL={propagation_ttl}")
+
+            # Track how many devices we sent to
+            sent_count = 0
+
+            # Send to all neighbors except the source
             for device_addr in connected_devices:
-                # do not propogate to source device, this will cause loops.
-                if device_addr == source_id:
+                # Skip the source to avoid loops
+                if device_addr == source_mac:
+                    logger.debug(f"Skipping propagation to source: {source_mac}")
                     continue
+
                 try:
-                    # Create a new request with a different broadcast ID
+                    # Create a new request with a unique broadcast ID
                     broadcast_id = f"cfg-{uuid.uuid4().hex}"
 
                     # Convert to JSON directly for immediate sending
@@ -2007,12 +2032,11 @@ class EAODVProtocol:
                         "type": RequestType.E_RREQ.value,
                         "source_id": self.node_id,
                         "source_mac": self.mac_address,
-                        "destination_id": "",  # Direct neighbor, no need for destination ID
-                        "destination_mac": device_addr,
+                        "destination_mac": device_addr,  # Empty for broadcast
                         "broadcast_id": broadcast_id,
                         "sequence_number": sequence_number,
                         "hop_count": 0,
-                        "time_to_live": 1,  # Only direct neighbors
+                        "time_to_live": propagation_ttl,
                         "timestamp": str(time.time()),
                         "previous_hop_mac": self.mac_address,
                         "operation_type": OperationType.CONFIG.value,
@@ -2020,21 +2044,22 @@ class EAODVProtocol:
                         "packet_topology": []
                     }
 
-                    # Mark as processed to avoid loops
+                    # Mark as processed to avoid loops if it comes back to us
                     with self.state_lock:
                         self.processed_route_requests.add(broadcast_id)
 
                     # Send to neighbor and log result
                     success = self.bt_comm.send_json(device_addr, request_data)
                     if success:
+                        sent_count += 1
                         logger.info(f"Propagated configuration to {device_addr}")
                     else:
                         logger.error(f"Failed to send configuration to {device_addr}")
 
                 except Exception as e:
                     logger.error(f"Failed to propagate config to {device_addr}: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
+
+            logger.info(f"Configuration propagated to {sent_count} devices")
 
         except Exception as e:
             logger.error(f"Error propagating configuration: {e}")
