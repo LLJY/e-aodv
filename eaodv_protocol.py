@@ -377,15 +377,18 @@ class EAODVProtocol:
                         hop_list.append(hop_info)
 
                     # Add destination with capabilities
+                    # Always include capabilities for all routes regardless of hop count
                     dest_info = {
                         "node_id": route.host.node_id,
                         "bt_mac_address": route.host.bt_mac_address
                     }
 
-                    # Add capability information for destination if available
+                    # Add capability information for destination - prioritize this part
                     dest_capabilities = self.node_capabilities.get(route.host.bt_mac_address, {})
                     if dest_capabilities:
                         dest_info["capabilities"] = dest_capabilities
+                        logger.debug(
+                            f"Including capabilities for {route.host.node_id or route.host.bt_mac_address} in RHELLO")
 
                     routing_knowledge.append({
                         "destination": dest_info,
@@ -997,6 +1000,13 @@ class EAODVProtocol:
                                                                                    OperationType] else "UNKNOWN"
                 logger.info(f"Received E-RREP ({op_type}) destined for us from {source_mac}")
 
+                if operation_type == OperationType.QUERY.value:
+                    response_data = message_data.get("response_data", {}) or {}
+                    # Check if this is a capabilities query response
+                    if "capabilities" in response_data:
+                        logger.info(f"Received capability data from {source_mac}, storing it")
+                        self.node_capabilities[source_mac] = response_data["capabilities"]
+
                 # Get both broadcast IDs
                 broadcast_id = message_data.get("broadcast_id", "")
                 original_request_id = message_data.get("original_request_id", "")
@@ -1457,6 +1467,7 @@ class EAODVProtocol:
                     for route_info in routing_knowledge:
                         dest = route_info.get("destination", {})
                         dest_mac = dest.get("bt_mac_address")
+                        dest_id = dest.get("node_id")
                         dest_capabilities = dest.get("capabilities")
                         if dest_capabilities and dest_mac:
                             self.node_capabilities[dest_mac] = dest_capabilities
@@ -2590,7 +2601,8 @@ class EAODVProtocol:
                         topology["nodes"].append({
                             "id": neighbor_of_neighbor,  # Use MAC as ID since we don't have node_id
                             "mac": neighbor_of_neighbor,
-                            "is_local": False
+                            "is_local": False,
+                            "capabilities": self.node_capabilities.get(neighbor_of_neighbor, {})
                         })
                         added_nodes.add(neighbor_of_neighbor)
 
@@ -2638,7 +2650,8 @@ class EAODVProtocol:
                             topology["nodes"].append({
                                 "id": hop_neighbor,
                                 "mac": hop_neighbor,
-                                "is_local": False
+                                "is_local": False,
+                                "capabilities": self.node_capabilities.get(hop_neighbor, {})
                             })
                             added_nodes.add(hop_neighbor)
 
