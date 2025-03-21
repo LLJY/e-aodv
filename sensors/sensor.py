@@ -27,7 +27,6 @@ class Sensor(ABC):
         """Read the current sensor value"""
         pass
 
-    @abstractmethod
     def cleanup(self):
         """Clean up the sensor"""
         pass
