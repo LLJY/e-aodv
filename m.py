@@ -501,55 +501,94 @@ class EAODVDemo:
 
     def query_node(self):
         """
-        Query data from a remote node with enhanced node selection.
+        Query data from a remote node with enhanced node selection from entire network topology.
         """
         self._clear_screen()
         print("\n=== Query Node Data ===")
 
-        # First determine if we want to select from connected nodes or enter a MAC address
+        # First determine if we want to select from known nodes or enter a MAC address
         print("\nChoose node selection method:")
-        print("1. Select from connected nodes")
+        print("1. Select from known nodes (direct + topology)")
         print("2. Enter MAC address manually")
 
         selection_method = input("\nEnter choice (1-2): ")
-
         dest_mac = None
 
         if selection_method == "1":
-            # Show connected nodes and let user choose
-            neighbors = self.eaodv.get_neighbors()
+            # Get all known nodes from both direct connections and topology
+            directly_connected_nodes = self.eaodv.get_neighbors()
+            topology = self.eaodv.get_network_topology()
 
-            if not neighbors:
-                print("No connected nodes available.")
+            # Create a combined list of all known nodes
+            all_nodes = []
+
+            # Track MACs to avoid duplicates
+            known_macs = set()
+
+            # First add directly connected nodes
+            for node in directly_connected_nodes:
+                mac = node.get("bt_mac_address", "")
+                if mac and mac not in known_macs:
+                    node["connection_type"] = "direct"  # Add connection type
+                    all_nodes.append(node)
+                    known_macs.add(mac)
+
+            # Then add nodes from topology that aren't directly connected
+            for node in topology["nodes"]:
+                mac = node.get("mac", "")
+                if mac and mac not in known_macs and not node.get("is_local", False):
+                    # Convert topology node format to match directly connected node format
+                    topology_node = {
+                        "node_id": node.get("id", "Unknown"),
+                        "bt_mac_address": mac,
+                        "connection_type": "topology",  # Mark as known through topology
+                        "capabilities": node.get("capabilities", {})
+                    }
+                    all_nodes.append(topology_node)
+                    known_macs.add(mac)
+
+            if not all_nodes:
+                print("No nodes available in the network.")
                 input("\nPress Enter to continue...")
                 return
 
-            print("\nConnected nodes:")
-            for i, neighbor in enumerate(neighbors):
-                node_id = neighbor.get("node_id") or "Unknown"
-                mac = neighbor.get("bt_mac_address", "Unknown")
+            print("\nAvailable nodes in network:")
+            for i, node in enumerate(all_nodes):
+                node_id = node.get("node_id", "Unknown")
+                mac = node.get("bt_mac_address", "")
+                connection_type = node.get("connection_type", "unknown")
+
                 # Show capabilities if available
                 caps = []
-                if "capabilities" in neighbor:
-                    for cap, enabled in neighbor["capabilities"].items():
+                if "capabilities" in node:
+                    for cap, enabled in node["capabilities"].items():
                         if cap != "temperature_value" and not cap.endswith("_writable") and enabled:
                             caps.append(cap)
                     cap_str = f" - Capabilities: {', '.join(caps)}" if caps else ""
-                    print(f"{i + 1}. {node_id} ({mac}){cap_str}")
+
+                    # Display with connection type indicator
+                    conn_indicator = "(direct)" if connection_type == "direct" else "(via topology)"
+                    print(f"{i + 1}. {node_id} ({mac}) {conn_indicator}{cap_str}")
                 else:
-                    print(f"{i + 1}. {node_id} ({mac})")
+                    conn_indicator = "(direct)" if connection_type == "direct" else "(via topology)"
+                    print(f"{i + 1}. {node_id} ({mac}) {conn_indicator}")
 
             try:
                 choice = int(input("\nSelect node (number): "))
-                if choice < 1 or choice > len(neighbors):
+                if choice < 1 or choice > len(all_nodes):
                     print("Invalid selection.")
                     input("\nPress Enter to continue...")
                     return
 
-                dest_mac = neighbors[choice - 1]["bt_mac_address"]
+                dest_mac = all_nodes[choice - 1]["bt_mac_address"]
                 # Get node_id for better logging
-                selected_node_id = neighbors[choice - 1].get("node_id", "")
-                print(f"Selected node: {selected_node_id} ({dest_mac})")
+                selected_node_id = all_nodes[choice - 1].get("node_id", "")
+                conn_type = all_nodes[choice - 1].get("connection_type", "")
+
+                if conn_type == "topology":
+                    print(f"Selected node: {selected_node_id} ({dest_mac}) - Note: This node is known through topology")
+                else:
+                    print(f"Selected node: {selected_node_id} ({dest_mac})")
             except ValueError:
                 print("Invalid input. Please enter a number.")
                 input("\nPress Enter to continue...")
@@ -563,6 +602,7 @@ class EAODVDemo:
             input("\nPress Enter to continue...")
             return
 
+        # Rest of the existing query_node method continues as before...
         # Query for capabilities first to show appropriate options
         print(f"Querying capabilities of {dest_mac}...")
 
@@ -589,11 +629,9 @@ class EAODVDemo:
         print("\nQuery types:")
         query_options = []
         option_num = 1
-        print(json.dumps(caps_result, indent=2))
+
         # Add available sensors based on capabilities
         if caps_result["success"] and "capabilities" in caps_result["data"]:
-            print("\nDEBUG - Raw capabilities data:")
-            print(json.dumps(caps_result["data"]["capabilities"], indent=2))
             caps = caps_result["data"]["capabilities"]
 
             # First pass: Find all sensor capabilities
@@ -727,43 +765,91 @@ class EAODVDemo:
 
     def write_to_node(self):
         """
-        Write data to a remote node with enhanced sensor support.
+        Write data to a remote node with enhanced node selection from entire topology.
         """
         self._clear_screen()
         print("\n=== Write to Node ===")
 
-        # First determine if we want to select from connected nodes or enter a MAC address
+        # First determine if we want to select from known nodes or enter a MAC address
         print("\nChoose node selection method:")
-        print("1. Select from connected nodes")
+        print("1. Select from known nodes (direct + topology)")
         print("2. Enter MAC address manually")
 
         selection_method = input("\nEnter choice (1-2): ")
-
         dest_mac = None
 
         if selection_method == "1":
-            # Show connected nodes and let user choose
-            neighbors = self.eaodv.get_neighbors()
+            # Get all known nodes from both direct connections and topology
+            directly_connected_nodes = self.eaodv.get_neighbors()
+            topology = self.eaodv.get_network_topology()
 
-            if not neighbors:
-                print("No connected nodes available.")
+            # Create a combined list of all known nodes
+            all_nodes = []
+
+            # Track MACs to avoid duplicates
+            known_macs = set()
+
+            # First add directly connected nodes
+            for node in directly_connected_nodes:
+                mac = node.get("bt_mac_address", "")
+                if mac and mac not in known_macs:
+                    node["connection_type"] = "direct"  # Add connection type
+                    all_nodes.append(node)
+                    known_macs.add(mac)
+
+            # Then add nodes from topology that aren't directly connected
+            for node in topology["nodes"]:
+                mac = node.get("mac", "")
+                if mac and mac not in known_macs and not node.get("is_local", False):
+                    # Convert topology node format to match directly connected node format
+                    topology_node = {
+                        "node_id": node.get("id", "Unknown"),
+                        "bt_mac_address": mac,
+                        "connection_type": "topology",  # Mark as known through topology
+                        "capabilities": node.get("capabilities", {})
+                    }
+                    all_nodes.append(topology_node)
+                    known_macs.add(mac)
+
+            if not all_nodes:
+                print("No nodes available in the network.")
                 input("\nPress Enter to continue...")
                 return
 
-            print("\nConnected nodes:")
-            for i, neighbor in enumerate(neighbors):
-                node_id = neighbor.get("node_id") or "Unknown"
-                mac = neighbor.get("bt_mac_address", "Unknown")
-                print(f"{i + 1}. {node_id} ({mac})")
+            print("\nAvailable nodes in network:")
+            for i, node in enumerate(all_nodes):
+                node_id = node.get("node_id", "Unknown")
+                mac = node.get("bt_mac_address", "")
+                connection_type = node.get("connection_type", "unknown")
+
+                # Check for writable capabilities
+                has_writable = False
+                if "capabilities" in node:
+                    for cap, enabled in node["capabilities"].items():
+                        if cap.endswith("_writable") and enabled:
+                            has_writable = True
+                            break
+
+                # Display with connection type indicator and writable flag
+                conn_indicator = "(direct)" if connection_type == "direct" else "(via topology)"
+                writable_indicator = " [writable]" if has_writable else ""
+                print(f"{i + 1}. {node_id} ({mac}) {conn_indicator}{writable_indicator}")
 
             try:
                 choice = int(input("\nSelect node (number): "))
-                if choice < 1 or choice > len(neighbors):
+                if choice < 1 or choice > len(all_nodes):
                     print("Invalid selection.")
                     input("\nPress Enter to continue...")
                     return
 
-                dest_mac = neighbors[choice - 1]["bt_mac_address"]
+                dest_mac = all_nodes[choice - 1]["bt_mac_address"]
+                selected_node_id = all_nodes[choice - 1].get("node_id", "")
+                conn_type = all_nodes[choice - 1].get("connection_type", "")
+
+                if conn_type == "topology":
+                    print(f"Selected node: {selected_node_id} ({dest_mac}) - Note: This node is known through topology")
+                else:
+                    print(f"Selected node: {selected_node_id} ({dest_mac})")
             except ValueError:
                 print("Invalid input. Please enter a number.")
                 input("\nPress Enter to continue...")
@@ -808,9 +894,6 @@ class EAODVDemo:
                 if cap.endswith("_writable") and enabled:
                     sensor_name = cap.replace("_writable", "")
                     writable_sensors.append(sensor_name)
-
-        # Add traditional writable capabilities for backward compatibility
-        # traditional_writables = ["led", "motor", "display"]
 
         # Show write options
         print("\nAvailable write options:")
@@ -864,6 +947,16 @@ class EAODVDemo:
         elif selected_sensor == "display":
             display_message = input("Enter display message: ")
             write_data[selected_sensor] = display_message
+        elif selected_sensor == "servo":
+            try:
+                angle = int(input("Enter servo angle (0-180): "))
+                if angle < 0 or angle > 180:
+                    raise ValueError("Servo angle must be between 0 and 180")
+                write_data[selected_sensor] = angle
+            except ValueError as e:
+                print(f"Invalid servo angle: {e}")
+                input("\nPress Enter to continue...")
+                return
         else:
             # Generic sensor handling for unknown types
             value = input(f"Enter value for {selected_sensor}: ")
