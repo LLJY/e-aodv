@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from dataclasses import asdict, is_dataclass
+
 import bluetooth
 import json
 import threading
@@ -692,6 +694,12 @@ class BTCommunication:
 
         try:
             # Send the JSON data
+            if "packet_topology" in data:
+                # safely convert dataclass to json
+                data["packet_topology"] = [
+                    asdict(entry) if is_dataclass(entry) else entry  # Automatic validation
+                    for entry in data["packet_topology"]
+                ]
             json_str = json.dumps(data) + "\n"
             json_bytes = json_str.encode('utf-8')
             sock.send(json_bytes)

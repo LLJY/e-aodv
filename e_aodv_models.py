@@ -194,6 +194,22 @@ class E_RREP:
             response_data={}
         )
 
+    def prepare_reply(self, node_mac: str, node_id: Optional[str], neighbors: List[str]) -> None:
+        """
+        Called by intermediate nodes (or the final node) when building
+        or updating the E_RREP on its way back to the source.
+        Increments the hop count, updates the timestamp, and appends new topology info.
+        """
+        self.hop_count += 1
+        self.timestamp = str(datetime.now())
+
+        new_entry = TopologyEntry(
+            node_id=node_id,
+            bt_mac_address=node_mac,
+            neighbors=neighbors
+        )
+        self.packet_topology.append(new_entry)
+
 
 @dataclass
 class E_RERR:
@@ -408,11 +424,11 @@ if __name__ == "__main__":
 
     # Create an E-RREP from the query E-RREQ (for demonstration)
     e_rrep = E_RREP.from_erreq(query_req)
-    # e_rrep.prepare_reply(
-    #     node_mac="AA:BB:CC:DD:EE:02",
-    #     node_id="node-C",
-    #     neighbors=["node-D", "node-E"]
-    # )
+    e_rrep.prepare_reply(
+        node_mac="AA:BB:CC:DD:EE:02",
+        node_id="node-C",
+        neighbors=["node-D", "node-E"]
+    )
     # Add response data for the query
     e_rrep.response_data = {"temperature": 24.5, "status": "ok"}
 

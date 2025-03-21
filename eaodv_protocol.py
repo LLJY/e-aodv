@@ -903,11 +903,11 @@ class EAODVProtocol:
             e_rrep.source_mac = self.mac_address
 
             # # Prepare the reply with our information (this method doesn't exist)
-            # e_rrep.prepare_reply(
-            #     node_mac=self.mac_address,
-            #     node_id=self.node_id,
-            #     neighbors=neighbor_macs
-            # )
+            e_rrep.prepare_reply(
+                node_mac=self.mac_address,
+                node_id=self.node_id,
+                neighbors=neighbor_macs
+            )
 
             # Convert to JSON for sending - FIX SERIALIZATION HERE
             rrep_data = {
@@ -1558,11 +1558,11 @@ class EAODVProtocol:
             e_rrep.source_mac = self.mac_address
 
             # Prepare the reply with our information
-            # e_rrep.prepare_reply(
-            #     node_mac=self.mac_address,
-            #     node_id=self.node_id,
-            #     neighbors=neighbor_macs
-            # )
+            e_rrep.prepare_reply(
+                node_mac=self.mac_address,
+                node_id=self.node_id,
+                neighbors=neighbor_macs
+            )
 
             # Process the query
             query_params = e_rreq.query_params if e_rreq.query_params else {}
@@ -1732,11 +1732,11 @@ class EAODVProtocol:
             e_rrep.source_mac = self.mac_address
 
             # Prepare the reply with our information
-            # e_rrep.prepare_reply(
-            #     node_mac=self.mac_address,
-            #     node_id=self.node_id,
-            #     neighbors=neighbor_macs
-            # )
+            e_rrep.prepare_reply(
+                node_mac=self.mac_address,
+                node_id=self.node_id,
+                neighbors=neighbor_macs
+            )
 
             # Process the write request
             write_params = e_rreq.query_params
@@ -1856,11 +1856,11 @@ class EAODVProtocol:
             e_rrep.source_mac = self.mac_address
 
             # Prepare the reply with our information
-            # e_rrep.prepare_reply(
-            #     node_mac=self.mac_address,
-            #     node_id=self.node_id,
-            #     neighbors=neighbor_macs
-            # )
+            e_rrep.prepare_reply(
+                node_mac=self.mac_address,
+                node_id=self.node_id,
+                neighbors=neighbor_macs
+            )
 
             # Process the configuration request
             config_params = e_rreq.query_params
@@ -1927,7 +1927,7 @@ class EAODVProtocol:
         except Exception as e:
             logger.error(f"Error handling config request: {e}")
 
-    def _propagate_config_to_neighbors(self, config_params: Dict[str, Any], source_id: str, original_broadcast_id: str):
+    def _propagate_config_to_neighbors(self, config_params: Dict[str, Any], source_id: str):
         """
         Propagate configuration changes to neighbors.
 
