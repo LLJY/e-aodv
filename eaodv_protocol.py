@@ -601,6 +601,8 @@ class EAODVProtocol:
                 "originator_id": e_rerr.originator_id,
                 "originator_mac": e_rerr.originator_mac,
                 "timestamp": e_rerr.timestamp,
+                "broadcast_id": e_rerr.broadcast_id,  # Add this
+                "time_to_live": e_rerr.time_to_live,  # Add this
                 "reason": e_rerr.reason
             }
 
@@ -1460,9 +1462,6 @@ class EAODVProtocol:
             for device_addr in connected_devices:
                 if device_addr != sender_address:
                     try:
-                        if error_data["time_to_live"] is not None:
-                            logger.error("RERR has no TTL!!!")
-                            error_data["time_to_live"] = error_data["time_to_live"] - 1
                         self.bt_comm.send_json(device_addr, error_data)
                     except Exception as e:
                         logger.error(f"Failed to forward E-RERR to {device_addr}: {e}")
