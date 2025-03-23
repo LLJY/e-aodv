@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EAODV Network - Packet Traversal</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f7f9fc;
+        }
+        header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        h2 {
+            color: #2c3e50;
+            border-bottom: 2px solid #ecf0f1;
+            padding-bottom: 10px;
+            margin-top: 40px;
+        }
+        h3 {
+            color: #34495e;
+        }
+        .subtitle {
+            color: #95a5a6;
+            font-size: 1.2em;
+        }
+        .nav {
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+        .nav a {
+            margin-right: 15px;
+            color: #2980b9;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .nav a:hover {
+            color: #3498db;
+            text-decoration: underline;
+        }
+        .section {
+            background-color: white;
+            padding: 25px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .diagram {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .step-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            margin: 30px 0;
+        }
+        .step {
+            background-color: #fff;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin-bottom: 20px;
+            width: 100%;
+            box-sizing: border-box;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .step-number {
+            background-color: #3498db;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-block;
+            text-align: center;
+            line-height: 30px;
+            margin-right: 10px;
+        }
+        code {
+            background-color: #f8f9fa;
+            padding: 3px 5px;
+            border-radius: 3px;
+            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+            font-size: 0.9em;
+            color: #e74c3c;
+        }
+        .note {
+            background-color: #fffacd;
+            border-left: 4px solid #f1c40f;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .optimization {
+            background-color: #e8f8f5;
+            border-left: 4px solid #1abc9c;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e1e1e1;
+        }
+        th {
+            background-color: #f8f9fa;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .highlight {
+            background-color: #ffffcc;
+            padding: 2px;
+        }
+        .packet {
+            font-family: monospace;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border: 1px solid #e9ecef;
+        }
+        .packet-route {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 30px 0;
+            flex-wrap: wrap;
+        }
+        .node {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #3498db;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 10px;
+            font-weight: bold;
+            position: relative;
+        }
+        .node.source {
+            background-color: #2ecc71;
+        }
+        .node.destination {
+            background-color: #e74c3c;
+        }
+        .arrow {
+            width: 80px;
+            height: 20px;
+            position: relative;
+            margin: 0 -10px;
+        }
+        .arrow::after {
+            content: '→';
+            font-size: 30px;
+            color: #7f8c8d;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        @media (max-width: 768px) {
+            .step {
+                width: 100%;
+            }
+            .packet-route {
+                flex-direction: column;
+            }
+            .arrow {
+                transform: rotate(90deg);
+                margin: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>EAODV Network Documentation</h1>
+        <p class="subtitle">Enhanced Ad-Hoc On-Demand Distance Vector Routing for BLE Networks</p>
+    </header>
+
+    <div class="nav">
+        <a href="network-traversal.html">Packet Traversal</a>
+        <a href="request-types.html">Request Types</a>
+        <a href="information-propagation.html">Information Propagation</a>
+    </div>
+
+    <div class="section">
+        <h2>How Packets Traverse the EAODV Network</h2>
+        <p>
+            The Enhanced AODV (EAODV) protocol creates an efficient mesh network over Bluetooth Low Energy (BLE),
+            enabling multi-hop communication between devices that aren't directly connected. Here's a comprehensive
+            explanation of how packets traverse this network.
+        </p>
+    </div>
+
+    <div class="section">
+        <h3>1. Basic Packet Flow Mechanism</h3>
+
+        <div class="diagram">
+            <div class="packet-route">
+                <div class="node source">Node A<br>(Source)</div>
+                <div class="arrow"></div>
+                <div class="node">Node B</div>
+                <div class="arrow"></div>
+                <div class="node">Node C</div>
+                <div class="arrow"></div>
+                <div class="node destination">Node D<br>(Destination)</div>
+            </div>
+        </div>
+
+        <p>
+            In EAODV, packets don't blindly flood the network. Instead, they follow discovered routes that are
+            established on-demand (reactive routing) and refined over time through information sharing.
+        </p>
+
+        <div class="step-container">
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Route Discovery:</strong> Before data can be sent, the source node must discover a route to the
+                destination using E-RREQ (Enhanced Route Request) messages.
+            </div>
+
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Route Establishment:</strong> Once a route is found, the destination or knowledgeable intermediate
+                node responds with an E-RREP (Enhanced Route Reply).
+            </div>
+
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Data Transmission:</strong> With a route established, data packets can now follow the discovered
+                path, being forwarded hop-by-hop toward the destination.
+            </div>
+
+            <div class="step">
+                <span class="step-number">4</span>
+                <strong>Route Maintenance:</strong> If a link fails, nodes detect this and propagate E-RERR (Enhanced
+                Route Error) messages, prompting new route discovery when needed.
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>2. The Journey of a Data Packet</h3>
+
+        <p>Let's follow a typical data packet's journey through the EAODV network:</p>
+
+        <div class="step-container">
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Packet Creation:</strong> The source node creates a data packet with a destination MAC address
+                (and optionally a node ID).
+                <div class="packet">
+                    {<br>
+                    &nbsp;&nbsp;"type": "user_message",<br>
+                    &nbsp;&nbsp;"source_id": "node-A",<br>
+                    &nbsp;&nbsp;"source_mac": "AA:BB:CC:DD:EE:01",<br>
+                    &nbsp;&nbsp;"destination_mac": "AA:BB:CC:DD:EE:04",<br>
+                    &nbsp;&nbsp;"message": "Hello from Node A!",<br>
+                    &nbsp;&nbsp;"timestamp": "1614878400.123"<br>
+                    }
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Route Lookup:</strong> The source node checks its routing table for a route to the destination.
+                <ul>
+                    <li>If a route exists, the packet is forwarded to the next hop in that route.</li>
+                    <li>If no route exists, route discovery begins with an E-RREQ while the packet waits.</li>
+                </ul>
+            </div>
+
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Next Hop Forwarding:</strong> Each intermediate node receives the packet, consults its routing
+                table, and forwards to the appropriate next hop.
+                <div class="note">
+                    The routing decision at each node uses only local knowledge - each node knows only the next hop,
+                    not necessarily the full path.
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">4</span>
+                <strong>Destination Delivery:</strong> When the packet reaches its final destination, the node
+                processes it based on its type (query, message, etc.).
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>3. Optimizing Packet Traversal in EAODV</h3>
+
+        <p>Your EAODV implementation includes several optimizations that improve packet traversal efficiency:</p>
+
+        <div class="optimization">
+            <h4>Enhanced Topology Information</h4>
+            <p>
+                Unlike standard AODV, your E-RREQ and E-RREP packets carry partial topology information in the
+                <code>packet_topology</code> field. This allows nodes to learn about network structure beyond their
+                immediate neighbors, enabling more efficient routing decisions.
+            </p>
+            <p>
+                Example from code: <code>e_rreq.forward_prepare()</code> method adds the current node's topology
+                information before forwarding.
+            </p>
+        </div>
+
+        <div class="optimization">
+            <h4>Binary Exponential Backoff</h4>
+            <p>
+                The <code>calculate_backoff_delay()</code> function in <code>bt_communication.py</code> implements
+                an exponential backoff with jitter for connection retries, preventing network congestion when
+                multiple nodes attempt to establish connections simultaneously.
+            </p>
+        </div>
+
+        <div class="optimization">
+            <h4>Route Caching and Reuse</h4>
+            <p>
+                Nodes cache routes learned from previous discoveries and through R_HELLO messages, reducing the need
+                for frequent route discoveries and minimizing network overhead.
+            </p>
+        </div>
+
+        <div class="optimization">
+            <h4>Smart Handling of Link Failures</h4>
+            <p>
+                When links fail, EAODV doesn't immediately invalidate all routes. Instead, it intelligently updates
+                specific routes using <code>_update_routes_for_partial_failure()</code>, maintaining connectivity
+                where possible.
+            </p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>4. Special Packet Traversal Cases</h3>
+
+        <table>
+            <tr>
+                <th>Scenario</th>
+                <th>EAODV Behavior</th>
+            </tr>
+            <tr>
+                <td>Link Failure During Transmission</td>
+                <td>
+                    If a node detects a link failure during transmission, it generates an E-RERR message that propagates
+                    to affected nodes. Routes through the failed link are invalidated, and new routes are discovered as needed.
+                </td>
+            </tr>
+            <tr>
+                <td>Multiple Routes Available</td>
+                <td>
+                    When multiple routes to a destination exist, your implementation typically uses the one with the
+                    fewest hops (shortest path).
+                </td>
+            </tr>
+            <tr>
+                <td>Destination Node Unreachable</td>
+                <td>
+                    If no route to the destination can be established after multiple retries, the sending node receives
+                    a "route discovery failed" notification.
+                </td>
+            </tr>
+            <tr>
+                <td>Broadcast Messages</td>
+                <td>
+                    Some messages like R_HELLO are broadcast to all connected neighbors. These are not forwarded
+                    beyond direct neighbors to prevent flooding.
+                </td>
+            </tr>
+            <tr>
+                <td>TTL Expiration</td>
+                <td>
+                    Each E-RREQ has a Time-To-Live (TTL) field that decrements at each hop. When TTL reaches zero,
+                    the packet is dropped to prevent infinite forwarding in case of routing loops.
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3>5. Handling Concurrent Transmissions</h3>
+
+        <p>
+            EAODV must handle situations where multiple nodes are transmitting simultaneously. Your implementation addresses
+            this with:
+        </p>
+
+        <ul>
+            <li><strong>Duplicate Detection:</strong> Using broadcast IDs to identify and drop duplicate packets</li>
+            <li><strong>Thread Safety:</strong> Using locks to prevent race conditions in multi-threaded contexts</li>
+            <li><strong>Randomized Timers:</strong> Avoiding synchronization issues with jittered timers</li>
+            <li><strong>Packet Queuing:</strong> Implicitly queuing data packets while routes are being discovered</li>
+        </ul>
+
+        <div class="note">
+            <p>
+                The code shows careful consideration of concurrent operations with constructs like:
+            </p>
+            <pre><code>with self.state_lock:
+    # Thread-safe operations
+    ...</code></pre>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>6. Code Implementation Detail</h3>
+
+        <p>
+            Let's examine how packet traversal is implemented in the <code>send_data_to_node()</code> method:
+        </p>
+
+        <div class="packet">
+<pre>def send_data_to_node(self, dest_mac: str, data: Dict[str, Any],
+                     on_route_discovery: Optional[Callable[[bool], None]] = None) -> bool:
+    """
+    Send data to a node, discovering route if needed.
+
+    Args:
+        dest_mac: Destination MAC address
+        data: Data to send
+        on_route_discovery: Optional callback when route discovery completes
+
+    Returns:
+        True if data was sent or route discovery started
+    """
+    try:
+        # Check if directly connected
+        with self.state_lock:
+            if dest_mac in self.bt_comm.connected_devices:
+                # Directly connected, send immediately
+                return self.bt_comm.send_json(dest_mac, data)
+
+        # Check if we have a route
+        next_hop = self._find_next_hop_to_destination(dest_mac)
+
+        if next_hop:
+            # We have a route, send to next hop
+            return self.bt_comm.send_json(next_hop, data)
+        else:
+            # No route, start discovery
+            def route_callback(success, route):
+                if success and route:
+                    # Route found, send data
+                    next_hop = route[0]
+                    try:
+                        self.bt_comm.send_json(next_hop, data)
+                        if on_route_discovery:
+                            on_route_discovery(True)
+                    except Exception as e:
+                        logger.error(f"Failed to send data after route discovery: {e}")
+                        if on_route_discovery:
+                            on_route_discovery(False)
+                else:
+                    # Route discovery failed
+                    logger.error(f"Route discovery failed for {dest_mac}")
+                    if on_route_discovery:
+                        on_route_discovery(False)
+
+            # Start route discovery
+            self.discover_route("", dest_mac=dest_mac, callback=route_callback)
+            return True
+
+    except Exception as e:
+        logger.error(f"Error sending data to node: {e}")
+        return False</pre>
+        </div>
+
+        <p>
+            This method demonstrates the core packet traversal flow:
+        </p>
+        <ol>
+            <li>First try direct connection</li>
+            <li>Then consult routing table for a multi-hop route</li>
+            <li>If no route exists, initiate route discovery</li>
+            <li>Upon route discovery completion, send the data along the discovered route</li>
+        </ol>
+    </div>
+
+</body>
+</html>

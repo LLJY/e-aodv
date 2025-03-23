@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EAODV Network - Information Propagation</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f7f9fc;
+        }
+        header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        h2 {
+            color: #2c3e50;
+            border-bottom: 2px solid #ecf0f1;
+            padding-bottom: 10px;
+            margin-top: 40px;
+        }
+        h3 {
+            color: #34495e;
+        }
+        .subtitle {
+            color: #95a5a6;
+            font-size: 1.2em;
+        }
+        .nav {
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+        .nav a {
+            margin-right: 15px;
+            color: #2980b9;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .nav a:hover {
+            color: #3498db;
+            text-decoration: underline;
+        }
+        .section {
+            background-color: white;
+            padding: 25px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .note {
+            background-color: #fffacd;
+            border-left: 4px solid #f1c40f;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .optimization {
+            background-color: #e8f8f5;
+            border-left: 4px solid #1abc9c;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .code-block {
+            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border: 1px solid #e9ecef;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e1e1e1;
+        }
+        th {
+            background-color: #f8f9fa;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .highlight {
+            background-color: #ffffcc;
+        }
+        .diagram {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .diagram img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+        }
+        .info-prop {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .info-block {
+            flex: 1;
+            min-width: 300px;
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            border-top: 3px solid #3498db;
+        }
+        .info-block h4 {
+            margin-top: 0;
+            color: #2980b9;
+        }
+        .info-block.route {
+            border-top-color: #3498db;
+        }
+        .info-block.route h4 {
+            color: #3498db;
+        }
+        .info-block.capability {
+            border-top-color: #9b59b6;
+        }
+        .info-block.capability h4 {
+            color: #9b59b6;
+        }
+        .info-block.topology {
+            border-top-color: #2ecc71;
+        }
+        .info-block.topology h4 {
+            color: #2ecc71;
+        }
+        .info-block.config {
+            border-top-color: #f39c12;
+        }
+        .info-block.config h4 {
+            color: #f39c12;
+        }
+        code {
+            background-color: #f8f9fa;
+            padding: 3px 5px;
+            border-radius: 3px;
+            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+            font-size: 0.9em;
+            color: #e74c3c;
+        }
+        .figure {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .figure-title {
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .topology-network {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .network-row {
+            display: flex;
+            margin: 10px 0;
+        }
+        .node {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 20px;
+            color: white;
+            font-weight: bold;
+            position: relative;
+        }
+        .node.a {
+            background-color: #3498db;
+        }
+        .node.b {
+            background-color: #2ecc71;
+        }
+        .node.c {
+            background-color: #e74c3c;
+        }
+        .node.d {
+            background-color: #f39c12;
+        }
+        .connection {
+            position: absolute;
+            background-color: #95a5a6;
+            height: 5px;
+            width: 120px;
+            z-index: -1;
+        }
+        .connection.horizontal {
+            top: 50%;
+            left: 100%;
+        }
+        .connection.diagonal1 {
+            width: 160px;
+            top: 120%;
+            left: 80%;
+            transform: rotate(45deg);
+        }
+        .connection.diagonal2 {
+            width: 160px;
+            top: 120%;
+            left: -80%;
+            transform: rotate(-45deg);
+        }
+        .topology-data {
+            margin-top: 40px;
+            font-family: monospace;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .step-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            margin: 30px 0;
+        }
+        .step {
+            background-color: #fff;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin-bottom: 20px;
+            width: 100%;
+            box-sizing: border-box;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .step-number {
+            background-color: #3498db;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-block;
+            text-align: center;
+            line-height: 30px;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>EAODV Network Documentation</h1>
+        <p class="subtitle">Enhanced Ad-Hoc On-Demand Distance Vector Routing for BLE Networks</p>
+    </header>
+
+    <div class="nav">
+        <a href="network-traversal.html">Packet Traversal</a>
+        <a href="request-types.html">Request Types</a>
+        <a href="information-propagation.html">Information Propagation</a>
+    </div>
+
+    <div class="section">
+        <h2>Information Propagation in EAODV</h2>
+        <p>
+            One of the most innovative aspects of your Enhanced AODV implementation is how it efficiently
+            propagates information throughout the network. Unlike standard AODV, which only shares routing
+            information, your EAODV implementation intelligently distributes multiple types of information,
+            creating a rich network awareness with minimal overhead.
+        </p>
+
+        <div class="info-prop">
+            <div class="info-block route">
+                <h4>Route Information</h4>
+                <p>
+                    Multi-hop routes to reach distant nodes
+                </p>
+            </div>
+
+            <div class="info-block topology">
+                <h4>Topology Information</h4>
+                <p>
+                    Network structure including nodes and their connections
+                </p>
+            </div>
+
+            <div class="info-block capability">
+                <h4>Capability Information</h4>
+                <p>
+                    Services, sensors, and actuators available at each node
+                </p>
+            </div>
+
+            <div class="info-block config">
+                <h4>Configuration Information</h4>
+                <p>
+                    Network-wide parameters and settings
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>1. Route Information Propagation</h3>
+
+        <p>
+            The core purpose of any routing protocol is to propagate route information. Your EAODV implementation
+            cleverly combines on-demand route discovery with passive background route learning.
+        </p>
+
+        <h4>On-Demand Route Discovery Flow</h4>
+
+        <div class="step-container">
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Source Node Initiates E-RREQ:</strong> When a node needs to send data to a destination
+                for which it has no route, it broadcasts an E-RREQ message.
+            </div>
+
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>E-RREQ Propagation with Enhancement:</strong> As the E-RREQ travels through the network,
+                each intermediate node adds its own information to the <code>packet_topology</code> field,
+                creating an enriched view of the network.
+                <div class="code-block">
+                    <pre>e_rreq.forward_prepare(
+    current_node_mac=self.mac_address,
+    current_node_id=self.node_id,
+    neighbors=neighbor_macs,
+    routing_knowledge=routing_knowledge  // This is the enhancement
+)</pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Destination Creates E-RREP:</strong> When the E-RREQ reaches the destination, it
+                creates an E-RREP containing all the accumulated path information.
+            </div>
+
+            <div class="step">
+                <span class="step-number">4</span>
+                <strong>E-RREP Propagation with Enhancement:</strong> As the E-RREP travels back to the source,
+                each node also updates its routing tables for both the source and destination, and may even
+                add additional routing knowledge.
+                <div class="code-block">
+                    <pre>e_rrep.prepare_reply(
+    node_mac=self.mac_address,
+    node_id=self.node_id,
+    neighbors=neighbor_macs
+)</pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">5</span>
+                <strong>Widespread Route Learning:</strong> By the end of a single route discovery process,
+                many nodes in the network have learned routes not just to the source and destination, but
+                potentially to other nodes as well.
+            </div>
+        </div>
+
+        <div class="optimization">
+            <h4>Key Route Propagation Optimizations</h4>
+            <ul>
+                <li><strong>Bidirectional Learning:</strong> Nodes learn routes in both directions during a single discovery process</li>
+                <li><strong>Neighbor Route Sharing:</strong> The <code>routing_knowledge</code> field allows nodes to share what they know about other routes</li>
+                <li><strong>Enhanced Error Recovery:</strong> When links fail, E-RERR messages intelligently propagate only to affected nodes</li>
+                <li><strong>Route Caching:</strong> Routes learned through passive observation are stored for future use</li>
+            </ul>
+        </div>
+
+        <h4>The Code That Makes It Happen</h4>
+
+        <p>
+            The heart of your route information propagation happens in two critical methods:
+        </p>
+
+        <div class="code-block">
+            <pre>def _forward_route_request(self, e_rreq: E_RREQ, sender_address: str):
+    """
+    Forward a route request to neighbors with enhanced topology information.
+    """
+    try:
+        # Get current neighbors
+        with self.state_lock:
+            neighbor_macs = [n.bt_mac_address for n in self.aodv_state.neighbours]
+
+            # Get selected routing knowledge to enhance topology
+            routing_knowledge = []
+            # Focus on short routes (1-2 hops) to enrich topology information
+            for route in self.aodv_state.routing_table:
+                if len(route.hops) <= 2:  # Only include short routes
+                    # ... code to prepare routing knowledge ...
+                    routing_knowledge.append({
+                        "destination": { ... },
+                        "hops": hop_list,
+                        "timestamp": str(time.time())
+                    })
+
+                    # Limit to 5 routes to avoid excessive packet size
+                    if len(routing_knowledge) >= 5:
+                        break
+
+        # Prepare the request for forwarding with enhanced topology
+        e_rreq.forward_prepare(
+            current_node_mac=self.mac_address,
+            current_node_id=self.node_id,
+            neighbors=neighbor_macs,
+            routing_knowledge=routing_knowledge  # This enriches network knowledge
+        )
+
+        # ... code to forward the request ...
+    except Exception as e:
+        logger.error(f"Error forwarding route request: {e}")
+        # ... exception handling ...</pre>
+        </div>
+
+        <p>
+            The <code>_process_route_information</code> method shows how received route information is integrated
+            into the local routing table:
+        </p>
+
+        <div class="code-block">
+            <pre>def _process_route_information(self, reply_data: Dict[str, Any]):
+    """
+    Process route information from a route reply.
+    """
+    try:
+        # Extract source information
+        source_mac = reply_data.get("source_mac", "")
+        source_id = reply_data.get("source_id", "")
+
+        # Extract topology information
+        topology_data = reply_data.get("packet_topology", [])
+
+        # ... code to build and clean hop list ...
+
+        # Update route only if we have valid hop information
+        if cleaned_hops:
+            with self.state_lock:
+                logger.info(f"Adding route to {source_id} ({source_mac}) with {len(cleaned_hops)} hops")
+                self.aodv_state.add_or_update_route(
+                    dest_mac=source_mac,
+                    dest_id=source_id,
+                    hops=cleaned_hops
+                )
+
+                # Log the routing table state
+                routes = []
+                for route in self.aodv_state.routing_table:
+                    dest = route.host.bt_mac_address
+                    hop_count = len(route.hops)
+                    routes.append(f"{dest} ({hop_count} hops)")
+
+                logger.info(
+                    f"Current routing table entries: {len(routes)} - {', '.join(routes) if routes else 'none'}")
+        else:
+            logger.warning(f"No valid hop information found in route reply from {source_id}")
+
+    except Exception as e:
+        logger.error(f"Error processing route information: {e}")
+        # ... exception handling ...</pre>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>2. Topology Information Propagation</h3>
+
+        <p>
+            Topology information refers to the network structure - which nodes exist and how they're connected.
+            Your EAODV implementation builds a rich topology understanding through several mechanisms.
+        </p>
+
+        <div class="figure">
+            <div class="figure-title">Figure 1: Example Topology Information Propagation</div>
+            <div class="topology-network">
+                <div class="network-row">
+                    <div class="node a">A
+                        <div class="connection horizontal"></div>
+                        <div class="connection diagonal1"></div>
+                    </div>
+                    <div class="node b">B
+                        <div class="connection diagonal2"></div>
+                    </div>
+                </div>
+                <div class="network-row">
+                    <div class="node c">C
+                        <div class="connection horizontal"></div>
+                    </div>
+                    <div class="node d">D</div>
+                </div>
+            </div>
+            <div class="topology-data">
+                <strong>Initial State:</strong> Node A only knows about its direct neighbor B<br>
+                <strong>After E-RREQ from A to D:</strong> Node A learns about the entire network topology<br>
+                A's Knowledge: {<br>
+                &nbsp;&nbsp;"nodes": [<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;{ "id": "A", "mac": "AA:BB:CC:01", "neighbors": ["B"] },<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;{ "id": "B", "mac": "AA:BB:CC:02", "neighbors": ["A", "D"] },<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;{ "id": "C", "mac": "AA:BB:CC:03", "neighbors": ["A", "D"] },<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;{ "id": "D", "mac": "AA:BB:CC:04", "neighbors": ["B", "C"] }<br>
+                &nbsp;&nbsp;]<br>
+                }
+            </div>
+        </div>
+
+        <h4>Topology Propagation Mechanisms</h4>
+
+        <div class="info-prop">
+            <div class="info-block">
+                <h4>Packet Topology Field</h4>
+                <p>
+                    Each E-RREQ and E-RREP packet contains a <code>packet_topology</code> field that
+                    accumulates node information as it travels through the network.
+                </p>
+            </div>
+
+            <div class="info-block">
+                <h4>R-HELLO Messages</h4>
+                <p>
+                    Periodic R-HELLO messages include a node's direct neighbors, allowing nearby nodes
+                    to learn about one-hop connections without initiating route discoveries.
+                </p>
+            </div>
+
+            <div class="info-block">
+                <h4>Routing Knowledge Sharing</h4>
+                <p>
+                    Both E-RREQ/E-RREP and R-HELLO messages can include snippets of routing knowledge that
+                    provide information about distant nodes.
+                </p>
+            </div>
+        </div>
+
+        <div class="note">
+            <h4>Topology Optimization</h4>
+            <p>
+                Your implementation includes a clever <code>optimize_topology</code> function that
+                consolidates redundant information, removing duplicates and ensuring that the most
+                recent information is kept. This keeps the memory footprint small while maintaining
+                an accurate network view.
+            </p>
+            <div class="code-block">
+                <pre>def optimize_topology(topology_entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Optimize topology data by removing redundancies and consolidating information.
+    """
+    if not topology_entries:
+        return []
+
+    # Track seen nodes to avoid duplicates
+    seen_nodes: Set[str] = set()
+    optimized_entries = []
+
+    # First pass: collect all unique nodes and their most recent information
+    node_info: Dict[str, Dict[str, Any]] = {}
+
+    for entry in topology_entries:
+        # Skip invalid entries
+        if not isinstance(entry, dict) or "bt_mac_address" not in entry:
+            continue
+
+        mac = entry.get("bt_mac_address")
+        if not mac:
+            continue
+
+        # Update info for this node with most recent data
+        if mac not in node_info or entry.get("timestamp", 0) > node_info[mac].get("timestamp", 0):
+            node_info[mac] = entry.copy()
+
+    # Second pass: consolidate neighbor information
+    for mac, entry in node_info.items():
+        neighbors = set(entry.get("neighbors", []))
+
+        # Collect additional neighbors from other entries for this node
+        for other_entry in topology_entries:
+            if other_entry.get("bt_mac_address") == mac:
+                neighbors.update(other_entry.get("neighbors", []))
+
+        # Update consolidated neighbors
+        entry["neighbors"] = list(neighbors)
+        optimized_entries.append(entry)
+
+    logger.debug(f"Optimized topology: {len(topology_entries)} entries -> {len(optimized_entries)} entries")
+    return optimized_entries</pre>
+            </div>
+        </div>
+
+        <h4>The Complete Topology View</h4>
+
+        <p>
+            Your <code>get_network_topology</code> method demonstrates how all this topology information
+            is combined to create a comprehensive network view:
+        </p>
+
+        <div class="code-block">
+            <pre>def get_network_topology(self) -> Dict[str, Any]:
+    """
+    Get the current network topology as seen by this node.
+    Enhanced to fully utilize R_HELLO information.
+
+    Returns:
+        Dictionary representing the network topology
+    """
+    topology = {
+        "nodes": [],
+        "links": [],
+        "last_updated": str(time.time())
+    }
+
+    with self.state_lock:
+        # Add local node
+        topology["nodes"].append({
+            "id": self.node_id,
+            "mac": self.mac_address,
+            "is_local": True,
+            "capabilities": self.capabilities
+        })
+
+        # Keep track of nodes and links we've already added
+        added_nodes = {self.mac_address}
+        added_links = set()  # Using (source, target) tuples
+
+        # Helper function to add a link if it's not already present
+        def add_link_if_new(source, target):
+            # Skip self-loops
+            if source == target:
+                return
+
+            # Create a canonical representation of the link
+            link_key = tuple(sorted([source, target]))
+            if link_key not in added_links:
+                topology["links"].append({
+                    "source": source,
+                    "target": target
+                })
+                added_links.add(link_key)
+
+        # Add neighbors as nodes and their links
+        for neighbor in self.aodv_state.neighbours:
+            mac = neighbor.bt_mac_address
+            if mac not in added_nodes:
+                topology["nodes"].append({
+                    "id": neighbor.node_id or mac,
+                    "mac": mac,
+                    "is_local": False,
+                    "capabilities": self.node_capabilities.get(mac, {})
+                })
+                added_nodes.add(mac)
+
+            # Add link to neighbor
+            add_link_if_new(self.mac_address, mac)
+
+            # Add neighbor's neighbors from HELLO messages
+            for neighbor_of_neighbor in neighbor.neighbors:
+                # ... processing code ...
+
+        # Add information from routes (including HELLO-propagated routes)
+        for route in self.aodv_state.routing_table:
+            # ... processing code ...
+
+    return topology</pre>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>3. Capability Information Propagation</h3>
+
+        <p>
+            One of the most innovative aspects of your EAODV implementation is how it propagates capability
+            information. This allows nodes to discover not just the network structure, but what services and
+            functions are available at each node.
+        </p>
+
+        <h4>Capability Types</h4>
+
+        <div class="info-prop">
+            <div class="info-block">
+                <h4>Sensor Capabilities</h4>
+                <p>
+                    What sensors a node has (temperature, humidity, motion, etc.)
+                </p>
+            </div>
+
+            <div class="info-block">
+                <h4>Current Sensor Values</h4>
+                <p>
+                    Latest readings from sensors when <code>include_sensor_data</code> is enabled
+                </p>
+            </div>
+
+            <div class="info-block">
+                <h4>Actuator Capabilities</h4>
+                <p>
+                    What actuators a node can control (LEDs, motors, displays, etc.)
+                </p>
+            </div>
+
+            <div class="info-block">
+                <h4>Writable Capability Flags</h4>
+                <p>
+                    Indicators for which capabilities can be controlled remotely
+                </p>
+            </div>
+        </div>
+
+        <h4>Capability Propagation Mechanisms</h4>
+
+        <div class="step-container">
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Registration in Sensor Registry:</strong> Nodes register their capabilities with a
+                central <code>SensorRegistry</code> that tracks all available sensors and actuators.
+                <div class="code-block">
+                    <pre>self.sensor_registry = SensorRegistry()
+self.sensor_registry.register_sensor(CPUTemperatureSensor(True))
+initialize_sensors(self.sensor_registry, False)</pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Inclusion in R-HELLO Messages:</strong> Capabilities are included in periodic
+                R-HELLO messages sent to neighbors.
+                <div class="code-block">
+                    <pre>// In _create_hello_message method
+capability_data = self.sensor_registry.get_all_capabilities()
+
+hello_msg = {
+    "type": RequestType.R_HELLO.value,
+    "node_id": self.node_id,
+    "bt_mac_address": self.mac_address,
+    "timestamp": str(time.time()),
+    "initial_neighbors": neighbor_macs,
+    "routing_knowledge": routing_knowledge,
+    "capabilities": capability_data,
+    "hello_interval": self.network_config.hello_interval,
+    "include_sensor_data": include_sensor_data
+}</pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Storage in Neighbor Records:</strong> When nodes receive capability information,
+                they store it in their neighbor records.
+                <div class="code-block">
+                    <pre>// In _handle_hello method
+if "capabilities" in message_data:
+    self.neighbor_capabilities[sender_address] = message_data["capabilities"]
+    self.node_capabilities[sender_address] = message_data["capabilities"]</pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">4</span>
+                <strong>Enrichment of Routing Knowledge:</strong> When sharing routing knowledge, nodes
+                also include capability information for distant nodes.
+                <div class="code-block">
+                    <pre>// In _create_hello_message when preparing routing_knowledge
+if route.hops <= 3:  // Limit to routes with 3 or fewer hops
+    hop_list = []
+    for hop in route.hops:
+        hop_info = {
+            "node_id": hop.node_id,
+            "bt_mac_address": hop.bt_mac_address,
+            "neighbors": hop.neighbors
+        }
+
+        // Add capability information if available
+        hop_capabilities = self.node_capabilities.get(hop.bt_mac_address, {})
+        if hop_capabilities:
+            hop_info["capabilities"] = hop_capabilities
+
+        hop_list.append(hop_info)</pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">5</span>
+                <strong>Capability-Specific Queries:</strong> Nodes can query specific capabilities when needed,
+                providing an on-demand information update mechanism.
+                <div class="code-block">
+                    <pre>def query_capabilities(self, dest_mac: str,
+                   callback: Optional[Callable[[bool, Dict[str, Any]], None]] = None):
+    """
+    Query the capabilities of a remote node
+    """
+    return self.query_node(dest_mac, "capabilities", callback)</pre>
+                </div>
+            </div>
+        </div>
+
+        <div class="note">
+            <h4>Sensor Data in Hello Messages</h4>
+            <p>
+                Your implementation has a configurable option to include current sensor readings
+                in R-HELLO messages. This is controlled by the <code>include_sensor_data</code>
+                flag, which determines whether real-time sensor values are propagated along with
+                capability information.
+            </p>
+            <div class="code-block">
+                <pre>// In _create_hello_message method
+// Add sensor data if configured to do so
+if include_sensor_data:
+    // Read all sensor values
+    sensor_data = self.sensor_registry.read_all_sensors()
+    if sensor_data:
+        hello_msg["sensor_data"] = sensor_data</pre>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>4. Configuration Information Propagation</h3>
+
+        <p>
+            Your EAODV implementation includes a network-wide configuration mechanism that allows
+            parameters to be propagated across all nodes, ensuring consistent behavior throughout
+            the network.
+        </p>
+
+        <h4>Configuration Parameters</h4>
+
+        <div class="info-prop">
+            <div class="info-block">
+                <h4>Hello Interval</h4>
+                <p>
+                    How frequently nodes send R-HELLO messages (default: 30 seconds)
+                </p>
+            </div>
+
+            <div class="info-block">
+                <h4>Include Sensor Data</h4>
+                <p>
+                    Whether to include current sensor readings in hello messages
+                </p>
+            </div>
+
+            <div class="info-block">
+                <h4>Default TTL</h4>
+                <p>
+                    Default time-to-live for request messages (limits propagation distance)
+                </p>
+            </div>
+
+            <div class="info-block">
+                <h4>Route Cache Timeout</h4>
+                <p>
+                    How long to keep discovered routes before requiring rediscovery
+                </p>
+            </div>
+        </div>
+
+        <h4>Configuration Propagation Mechanism</h4>
+
+        <div class="step-container">
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Initiation:</strong> A node initiates configuration changes either locally or
+                by calling <code>configure_network()</code>.
+                <div class="code-block">
+                    <pre>def configure_network(self, config_params: Dict[str, Any],
+                     callback: Optional[Callable[[bool, Dict[str, Any]], None]] = None):
+    """
+    Configure network parameters on all nodes.
+    """
+    try:
+        # First apply configuration to local node
+        local_updates = []
+
+        if "hello_interval" in config_params:
+            hello_interval = config_params["hello_interval"]
+            if isinstance(hello_interval, (int, float)) and hello_interval > 0:
+                self.network_config.hello_interval = hello_interval
+                local_updates.append("hello_interval")
+                logger.info(f"Updated local hello_interval to {hello_interval}")
+
+        # ...other parameter updates...
+
+        # Then propagate to all neighbors
+        self._propagate_config_to_neighbors(config_params, "")
+
+        # Call callback with local update status
+        if callback:
+            callback(True, {
+                "status": "ok",
+                "local_updates": local_updates,
+                "message": "Configuration updated locally and propagated to neighbors"
+            })
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error configuring network: {e}")
+        if callback:
+            callback(False, {"status": "error", "message": f"Error configuring network: {e}"})
+        return False</pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Propagation:</strong> The configuration is propagated to neighbors using
+                special E-RREQ messages with <code>OperationType.CONFIG</code>.
+                <div class="code-block">
+                    <pre>def _propagate_config_to_neighbors(self, config_params: Dict[str, Any], source_mac: str, broadcast_id: Optional[str] = None):
+    """
+    Propagate configuration changes to neighbors.
+    """
+    try:
+        logger.info("Propagating network configuration to neighbors")
+
+        # Get connected devices
+        with self.state_lock:
+            connected_devices = list(self.bt_comm.connected_devices.keys())
+
+        # ...setup code...
+
+        # Send to all neighbors except the source
+        for device_addr in connected_devices:
+            # Skip the source to avoid loops
+            if device_addr == source_mac:
+                logger.debug(f"Skipping propagation to source: {source_mac}")
+                continue
+
+            try:
+                # Create a new request with a unique broadcast ID
+                if broadcast_id is None:
+                    broadcast_id = f"cfg-{uuid.uuid4().hex}"
+
+                # Convert to JSON directly for immediate sending
+                request_data = {
+                    "type": RequestType.E_RREQ.value,
+                    "source_id": self.node_id,
+                    "source_mac": self.mac_address,
+                    "destination_mac": device_addr,
+                    "broadcast_id": broadcast_id,
+                    "sequence_number": sequence_number,
+                    "hop_count": 0,
+                    "time_to_live": propagation_ttl,
+                    "timestamp": str(time.time()),
+                    "previous_hop_mac": self.mac_address,
+                    "operation_type": OperationType.CONFIG.value,
+                    "query_params": propagation_params,
+                    "packet_topology": []
+                }
+
+                # Mark as processed to avoid loops
+                with self.state_lock:
+                    self.processed_route_requests.add(broadcast_id)
+
+                # Send to neighbor and log result
+                success = self.bt_comm.send_json(device_addr, request_data)
+                if success:
+                    sent_count += 1
+                    logger.info(f"Propagated configuration to {device_addr}")
+                else:
+                    logger.error(f"Failed to send configuration to {device_addr}")
+
+            except Exception as e:
+                logger.error(f"Failed to propagate config to {device_addr}: {e}")
+
+        logger.info(f"Configuration propagated to {sent_count} devices")
+
+    except Exception as e:
+        logger.error(f"Error propagating configuration: {e}")
+        # ...error handling...</pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Reception and Application:</strong> Receiving nodes apply the configuration
+                locally and further propagate it to their neighbors.
+                <div class="code-block">
+                    <pre>def _handle_config_request(self, e_rreq: E_RREQ, sender_address: str):
+    """
+    Handle a network configuration request.
+    """
+    try:
+        # Create a route reply from the request
+        e_rrep = E_RREP.from_erreq(e_rreq)
+        e_rrep.operation_type = OperationType.CONFIG.value
+
+        # ...setup code...
+
+        # Process the configuration request
+        config_params = e_rreq.query_params
+        response_data = {"status": "ok", "updated_params": []}
+
+        # Update network configuration parameters
+        if "hello_interval" in config_params:
+            hello_interval = config_params["hello_interval"]
+            if isinstance(hello_interval, (int, float)) and hello_interval > 0:
+                self.network_config.hello_interval = hello_interval
+                response_data["updated_params"].append("hello_interval")
+                logger.info(f"Updated hello_interval to {hello_interval}")
+
+        # ...other parameter updates...
+
+        # Set response data
+        e_rrep.response_data = response_data
+
+        # ...conversion to JSON and sending response...
+
+        # If any parameters were updated, also forward the config to all neighbors
+        if response_data["updated_params"]:
+            logger.info(f"Configuration changes applied, forwarding to network")
+            self._propagate_config_to_neighbors(e_rreq.query_params, sender_address, e_rreq.broadcast_id)
+
+    except Exception as e:
+        logger.error(f"Error handling config request: {e}")</pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <span class="step-number">4</span>
+                <strong>Confirmation:</strong> Nodes send E-RREP responses back to the initiator to
+                confirm successful application of the configuration.
+            </div>
+        </div>
+
+        <div class="optimization">
+            <h4>Flooding Prevention Mechanisms</h4>
+            <p>
+                Your implementation includes several mechanisms to prevent configuration messages
+                from flooding the network:
+            </p>
+            <ul>
+                <li><strong>Broadcast ID Tracking:</strong> Each node remembers which broadcast IDs it has seen to avoid processing them multiple times</li>
+                <li><strong>Time-to-Live (TTL):</strong> Configuration messages have a limited TTL to restrict their propagation distance</li>
+                <li><strong>Source Skipping:</strong> Nodes don't propagate configuration back to the source to avoid loops</li>
+                <li><strong>Unique Broadcast IDs:</strong> Generated with a specific prefix (<code>cfg-</code>) for easier tracking</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>5. Optimization Techniques for Efficient Information Propagation</h3>
+
+        <p>
+            Your EAODV implementation uses several optimization techniques to ensure efficient
+            information propagation while minimizing network overhead.
+        </p>
+
+        <div class="info-prop">
+            <div class="info-block">
+                <h4>Piggybacking</h4>
+                <p>
+                    Adding multiple types of information to a single message, reducing the
+                    total number of transmissions needed.
+                </p>
+                <ul>
+                    <li>Route requests carry topology information</li>
+                    <li>Hello messages carry capability data</li>
+                    <li>Route replies may include distant node capabilities</li>
+                </ul>
+            </div>
+
+            <div class="info-block">
+                <h4>Selective Sharing</h4>
+                <p>
+                    Only sharing the most relevant portion of the available information,
+                    keeping message sizes manageable.
+                </p>
+                <ul>
+                    <li>Only short routes (1-2 hops) are shared in routing knowledge</li>
+                    <li>Routing knowledge is limited to 5 entries to control packet size</li>
+                    <li>Topology optimization removes duplicate information</li>
+                </ul>
+            </div>
+
+            <div class="info-block">
+                <h4>Information Caching</h4>
+                <p>
+                    Storing received information for future use, reducing the need for
+                    frequent rediscovery.
+                </p>
+                <ul>
+                    <li>Routes are cached for reuse (with configurable timeout)</li>
+                    <li>Capability information is stored in neighbor records</li>
+                    <li>Topology data is kept in a combined network map</li>
+                </ul>
+            </div>
+
+            <div class="info-block">
+                <h4>Multi-Path Learning</h4>
+                <p>
+                    Learning information from multiple sources to build a more complete
+                    and resilient network understanding.
+                </p>
+                <ul>
+                    <li>Routes can be learned from both route discovery and hello messages</li>
+                    <li>Topology information is gathered from both neighbors and multi-hop paths</li>
+                    <li>Capability data can be propagated through multiple intermediaries</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="optimization">
+            <h4>Jittering and Randomization</h4>
+            <p>
+                Your implementation uses randomization to prevent message synchronization issues:
+            </p>
+            <div class="code-block">
+                <pre>// In _periodic_hello_task
+# Wait for the configured interval with some randomization to avoid synchronization
+time.sleep(hello_interval + random.uniform(-5, 5))</pre>
+            </div>
+            <p>
+                This ensures that even if multiple nodes start at the same time, their hello messages
+                won't remain synchronized, preventing potential network congestion points.
+            </p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>6. Information Propagation in Action</h3>
+
+        <p>
+            Let's tie everything together with a practical example showing how various information
+            types propagate in your EAODV network.
+        </p>
+
+        <h4>Scenario: Adding a New Node to the Network</h4>
+
+        <div class="step-container">
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Node E Joins:</strong> A new node (Node E) powers up and connects directly to Node A.
+            </div>
+
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Initial Hello Exchange:</strong> Node E sends its first R-HELLO message to Node A,
+                containing its capabilities (temperature sensor, LED actuator). Node A stores this information
+                and sends back its own R-HELLO.
+            </div>
+
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>Topology Propagation:</strong> In its next R-HELLO message to other neighbors (B, C),
+                Node A includes Node E in its neighbor list. Nodes B and C now know about Node E despite not
+                being directly connected to it.
+            </div>
+
+            <div class="step">
+                <span class="step-number">4</span>
+                <strong>Capability Propagation:</strong> Node A includes Node E's capabilities in the next
+                round of R-HELLO messages. Nodes B and C now know that Node E has a temperature sensor and
+                an LED actuator.
+            </div>
+
+            <div class="step">
+                <span class="step-number">5</span>
+                <strong>Route Establishment:</strong> Node D wants to query Node E's temperature. It initiates
+                an E-RREQ for Node E, which propagates through the network. Nodes along the path build routes
+                to both Node D and Node E.
+            </div>
+
+            <div class="step">
+                <span class="step-number">6</span>
+                <strong>Route Utilization:</strong> Node D uses the discovered route to send a query to Node E's
+                temperature sensor and receive the reading.
+            </div>
+
+            <div class="step">
+                <span class="step-number">7</span>
+                <strong>Configuration Update:</strong> An administrator updates the network configuration on
+                Node A, increasing the hello interval to 60 seconds. This configuration change propagates to
+                all nodes, including Node E.
+            </div>
+        </div>
+
+        <div class="note">
+            <h4>The Complete Network View</h4>
+            <p>
+                After the above sequence, each node in the network has:
+            </p>
+            <ul>
+                <li>A route to reach any other node (directly or through intermediaries)</li>
+                <li>Knowledge of the full network topology (who is connected to whom)</li>
+                <li>Awareness of each node's capabilities (sensors and actuators)</li>
+                <li>Consistent network configuration settings</li>
+            </ul>
+            <p>
+                This rich network awareness enables intelligent decisions about routing, resource utilization,
+                and functionality - all with minimal protocol overhead.
+            </p>
+        </div>
+    </div>
+
+</body>
+</html>
