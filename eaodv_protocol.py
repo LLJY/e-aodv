@@ -440,7 +440,7 @@ class EAODVProtocol:
                 except Exception as e:
                     logger.error(f"Failed to send hello to {device_addr}: {e}")
 
-            logger.info(f"Broadcast hello message to {len(connected_devices)} devices")
+            logger.info(f"\033[32m Broadcast hello message to {len(connected_devices)} devices \033[0m")
 
         except Exception as e:
             logger.error(f"Error broadcasting hello: {e}")
@@ -613,7 +613,7 @@ class EAODVProtocol:
             for device_addr in connected_devices:
                 try:
                     self.bt_comm.send_json(device_addr, error_data)
-                    logger.info(f"Sent E-RERR about {addr} to {device_addr}")
+                    logger.info(f"\033[31m Sent E-RERR about {addr} to {device_addr} \033[0m")
                 except Exception as e:
                     logger.error(f"Failed to send E-RERR to {device_addr}: {e}")
 
@@ -671,13 +671,13 @@ class EAODVProtocol:
                 # Mark as processed
                 self.processed_route_requests.add(e_rreq.broadcast_id)
             logger.info(
-                f"Checking if E-RREQ is destined for us from {e_rreq.source_id}, destination: {e_rreq.destination_mac} {e_rreq.destination_id} Our Address: {self.mac_address}, comparison = {e_rreq.destination_mac.lower().strip() == self.mac_address.lower().strip()}")
+                f"\033[35m Checking if E-RREQ is destined for us from {e_rreq.source_id}, destination: {e_rreq.destination_mac} {e_rreq.destination_id} Our Address: {self.mac_address}, comparison = {e_rreq.destination_mac.lower().strip() == self.mac_address.lower().strip()}\033[0m")
             # Check if we're the destination
             if e_rreq.destination_mac.lower().strip() == self.mac_address.lower().strip() or e_rreq.destination_id.lower() == self.node_id.lower():
                 # Log based on operation type
                 op_type = OperationType(e_rreq.operation_type).name if e_rreq.operation_type in [e.value for e in
                                                                                                  OperationType] else "UNKNOWN"
-                logger.info(f"Received E-RREQ ({op_type}) destined for us from {e_rreq.source_id}")
+                logger.info(f"\033[34m Received E-RREQ ({op_type}) destined for us from {e_rreq.source_id} \033[0m")
 
                 # Handle based on operation type
                 if e_rreq.operation_type == OperationType.QUERY.value:
@@ -692,7 +692,7 @@ class EAODVProtocol:
 
             # Check TTL
             if e_rreq.time_to_live <= 0:
-                logger.debug(f"Dropping E-RREQ with expired TTL")
+                logger.debug(f"\033[31m Dropping E-RREQ with expired TTL \033[0m")
                 return
 
             # Update route to source
@@ -855,7 +855,7 @@ class EAODVProtocol:
             # Log with operation type
             op_type = OperationType(e_rreq.operation_type).name if e_rreq.operation_type in [e.value for e in
                                                                                              OperationType] else "UNKNOWN"
-            logger.info(f"Forwarded E-RREQ ({op_type}) to {forwarded} devices with enhanced topology information")
+            logger.info(f"\033[34m Forwarded E-RREQ ({op_type}) to {forwarded} devices with enhanced topology information \033[0m")
 
         except Exception as e:
             logger.error(f"Error forwarding route request: {e}")
@@ -898,7 +898,7 @@ class EAODVProtocol:
                         bt_mac_address=entry.get("bt_mac_address", ""),
                         neighbors=entry.get("neighbors", [])
                     ))
-                logger.info(f"Optimized topology information for reply: {len(optimized_entries)} entries")
+                # logger.info(f"Optimized topology information for reply: {len(optimized_entries)} entries")
 
             # Create route reply from the optimized request
             e_rrep = E_RREP.from_erreq(e_rreq)
@@ -998,8 +998,8 @@ class EAODVProtocol:
             op_type = OperationType(e_rreq.operation_type).name if e_rreq.operation_type in [e.value for e in
                                                                                              OperationType] else "UNKNOWN"
 
-            logger.info(f"Sent E-RREP ({op_type}) to {sender_address} with optimized topology " +
-                        f"({len(e_rrep.packet_topology)} entries, {additional_routes} additional routes)")
+            logger.info(f"\033[34m Sent E-RREP ({op_type}) to {sender_address} with optimized topology " +
+                        f"({len(e_rrep.packet_topology)} entries, {additional_routes} additional routes) \033[0m")
 
         except Exception as e:
             logger.error(f"Error generating route reply: {e}")
@@ -1025,7 +1025,7 @@ class EAODVProtocol:
             if dest_mac == self.mac_address:
                 op_type = OperationType(operation_type).name if operation_type in [e.value for e in
                                                                                    OperationType] else "UNKNOWN"
-                logger.info(f"Received E-RREP ({op_type}) destined for us from {source_mac}")
+                logger.info(f"\033[34m Received E-RREP ({op_type}) destined for us from {source_mac} \033[0m")
 
                 if operation_type == OperationType.QUERY.value:
                     response_data = message_data.get("response_data", {}) or {}
@@ -1046,14 +1046,14 @@ class EAODVProtocol:
 
                         if original_request_id:
                             query_callback = self.pending_queries.pop(original_request_id, None)
-                            if query_callback:
-                                logger.info(f"Found query callback using original_request_id: {original_request_id}")
+                            # if query_callback:
+                            #     logger.info(f"Found query callback using original_request_id: {original_request_id}")
 
                         # Fall back to broadcast_id if original_request_id didn't work
                         if query_callback is None:
                             query_callback = self.pending_queries.pop(broadcast_id, None)
-                            if query_callback:
-                                logger.info(f"Found query callback using broadcast_id: {broadcast_id}")
+                            # if query_callback:
+                            #     logger.info(f"Found query callback using broadcast_id: {broadcast_id}")
 
                         if query_callback:
                             try:
@@ -1071,7 +1071,7 @@ class EAODVProtocol:
                                         logger.info(f"Received {query_type} response")
 
                                 # Call the callback with the response data
-                                logger.info(f"Calling query callback with response")
+                                # logger.info(f"Calling query callback with response")
                                 query_callback(True, response_data)
                             except Exception as e:
                                 logger.error(f"Error calling query callback: {e}")
@@ -1159,8 +1159,8 @@ class EAODVProtocol:
                             hop_count = len(route.hops)
                             routes.append(f"{dest} ({hop_count} hops)")
 
-                        logger.info(
-                            f"Current routing table entries: {len(routes)} - {', '.join(routes) if routes else 'none'}")
+                        # logger.info(
+                        #     f"Current routing table entries: {len(routes)} - {', '.join(routes) if routes else 'none'}")
                 else:
                     logger.warning(f"No valid hop information found in route reply from {source_id}")
 
@@ -1271,7 +1271,7 @@ class EAODVProtocol:
                 # Log with operation type
                 op_type = OperationType(operation_type).name if operation_type in [e.value for e in
                                                                                    OperationType] else "UNKNOWN"
-                logger.info(f"Forwarded E-RREP ({op_type}) to {next_hop}")
+                logger.info(f"\033[35m Forwarded E-RREP ({op_type}) to {next_hop} \033[0m")
             else:
                 logger.warning(f"No route to forward E-RREP to {dest_mac}")
 
@@ -1325,8 +1325,8 @@ class EAODVProtocol:
                 return
 
             # Log receipt of the error
-            logger.info(f"Received E-RERR: Node {failed_node_id or failed_node_mac} " +
-                        f"reported failed by {originator_mac}, reason: {reason}")
+            logger.info(f"\033[36m Received E-RERR: Node {failed_node_id or failed_node_mac} " +
+                        f"reported failed by {originator_mac}, reason: {reason} \033[0m")
 
             # Check if we have a direct connection to the supposedly failed node
             direct_connection_exists = False
@@ -1512,7 +1512,7 @@ class EAODVProtocol:
 
                 # Process routing knowledge from hello message
                 if routing_knowledge:
-                    logger.info(f"Received {len(routing_knowledge)} routes in hello from {node_id}")
+                    logger.info(f"\033[32m Received {len(routing_knowledge)} routes in hello from {node_id} \033[0m")
                     routes_added = 0
 
                     # Incorporate routing knowledge into our routing table
