@@ -46,11 +46,11 @@ def calculate_backoff_delay(retry_count: int, base_delay: float = BASE_BACKOFF_D
 
     return actual_delay
 
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format='%(asctime)s [%(levelname)s] %(message)s', # Include %(asctime)s where you want the time
+    datefmt='%H:%M:%S',  # Specify the desired time-only format
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
