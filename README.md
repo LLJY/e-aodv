@@ -1,4 +1,4 @@
-# EAODV-Gemini: Enhanced AODV Routing over Bluetooth
+# EAODV: Enhanced AODV Routing over Bluetooth
 
 ## Overview
 
@@ -30,8 +30,8 @@ Key features include:
 
 1.  **Clone the Repository:**
     ```bash
-    git clone <repository-url>
-    cd aodv-gemini
+    git clone https://github.com/LLJY/e-aodv
+    cd e-aodv
     ```
 
 2.  **Create Virtual Environment & Install Dependencies:**
