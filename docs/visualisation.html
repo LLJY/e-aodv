@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-AODV Protocol Visualization</title>
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --secondary-color: #2ecc71;
+            --alert-color: #e74c3c;
+            --neutral-color: #95a5a6;
+            --dark-color: #2c3e50;
+            --hello-color: #f39c12;
+            --background-color: #f7f9fc;
+            --panel-color: #ffffff;
+            --text-color: #333333;
+            --border-color: #ecf0f1;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: var(--background-color);
+        }
+
+        header {
+            background-color: var(--dark-color);
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+
+        h2 {
+            color: var(--dark-color);
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-top: 40px;
+        }
+
+        h3 {
+            color: var(--dark-color);
+        }
+
+        .subtitle {
+            color: #95a5a6;
+            font-size: 1.2em;
+        }
+
+        .section {
+            background-color: var(--panel-color);
+            padding: 25px;
+            border-radius: 5px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .note {
+            background-color: #fffacd;
+            border-left: 4px solid #f1c40f;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        .network-container {
+            position: relative;
+            width: 100%;
+            height: 500px;
+            margin: 30px 0;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .node {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2em;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.16);
+            z-index: 2;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .node:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .node.source {
+            background-color: var(--secondary-color);
+        }
+
+        .node.destination {
+            background-color: var(--alert-color);
+        }
+
+        .link {
+            position: absolute;
+            height: 2px;
+            background-color: var(--neutral-color);
+            transform-origin: 0 50%;
+            z-index: 1;
+        }
+
+        .packet {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            z-index: 3;
+            opacity: 0;
+        }
+
+        .packet.rreq {
+            background-color: var(--primary-color);
+        }
+
+        .packet.rrep {
+            background-color: var(--secondary-color);
+        }
+
+        .packet.rerr {
+            background-color: var(--alert-color);
+        }
+
+        .packet.hello {
+            background-color: var(--hello-color);
+        }
+
+        /* Animation for packets */
+        .packet-animation {
+            animation: movePacket 3s ease-in-out;
+            transition: none !important;
+        }
+
+        @keyframes movePacket {
+            0% {
+                opacity: 1;
+                transform: scale(0.8);
+            }
+            80% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(1.2);
+            }
+        }
+
+        .control-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        button.hello {
+            background-color: var(--hello-color);
+        }
+
+        button.hello:hover {
+            background-color: #d35400;
+        }
+
+        button.discover {
+            background-color: var(--secondary-color);
+        }
+
+        button.discover:hover {
+            background-color: #27ae60;
+        }
+
+        .packet-info {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+
+        .packet-info h4 {
+            margin-top: 0;
+            border-bottom: 1px solid #e9ecef;
+            padding-bottom: 5px;
+        }
+
+        .highlight {
+            background-color: #ffffcc;
+            padding: 2px;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #f8f9fa;
+            margin-right: 5px;
+            border-radius: 5px 5px 0 0;
+        }
+
+        .tab.active {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .topology-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .topology-item {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 15px;
+        }
+
+        .topology-item h4 {
+            margin-top: 0;
+            border-bottom: 1px solid #e9ecef;
+            padding-bottom: 5px;
+        }
+
+        /* Animation for nodes discovering each other */
+        @keyframes discoverNode {
+            0% { opacity: 0.3; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1.2); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .discover-animation {
+            animation: discoverNode 1s ease-in-out;
+        }
+
+        /* Animation for connecting nodes */
+        @keyframes connectNodes {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        .connect-animation {
+            animation: connectNodes 1s ease-in-out forwards;
+        }
+
+        /* Animation for building topology knowledge */
+        @keyframes buildTopology {
+            0% { background-color: rgba(46, 204, 113, 0.1); }
+            50% { background-color: rgba(46, 204, 113, 0.3); }
+            100% { background-color: rgba(46, 204, 113, 0.1); }
+        }
+
+        .topology-animation {
+            animation: buildTopology 2s ease-in-out infinite;
+        }
+
+        .step-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            margin: 30px 0;
+        }
+
+        .step {
+            background-color: #fff;
+            border-left: 4px solid var(--primary-color);
+            padding: 15px;
+            margin-bottom: 20px;
+            width: 100%;
+            box-sizing: border-box;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .step-number {
+            background-color: var(--primary-color);
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-block;
+            text-align: center;
+            line-height: 30px;
+            margin-right: 10px;
+        }
+
+        /* Media queries for responsiveness */
+        @media (max-width: 768px) {
+            .network-container {
+                height: 400px;
+            }
+
+            .node {
+                width: 50px;
+                height: 50px;
+                font-size: 1em;
+            }
+        }
+
+        /* Animation sequences */
+        .sequence-container {
+            margin-bottom: 40px;
+        }
+
+        .sequence-step {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+
+        .sequence-step.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Arrows for flows */
+        .arrow {
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            background-color: transparent;
+            border-top: 3px solid var(--primary-color);
+            border-right: 3px solid var(--primary-color);
+            transform: rotate(45deg);
+            z-index: 2;
+        }
+
+        .info-block {
+            border-left: 4px solid var(--primary-color);
+            padding: 10px 15px;
+            margin: 15px 0;
+            background-color: rgba(52, 152, 219, 0.1);
+        }
+
+        .info-block.rreq {
+            border-left-color: var(--primary-color);
+            background-color: rgba(52, 152, 219, 0.1);
+        }
+
+        .info-block.rrep {
+            border-left-color: var(--secondary-color);
+            background-color: rgba(46, 204, 113, 0.1);
+        }
+
+        .info-block.hello {
+            border-left-color: var(--hello-color);
+            background-color: rgba(243, 156, 18, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>E-AODV Protocol Visualization</h1>
+        <p class="subtitle">Enhanced Ad-Hoc On-Demand Distance Vector Routing for BLE Networks</p>
+    </header>
+
+    <div class="section">
+        <h2>Introduction to E-AODV</h2>
+        <p>
+            Enhanced AODV (E-AODV) is an improved version of the Ad-hoc On-Demand Distance Vector routing protocol
+            designed specifically for Bluetooth Low Energy networks. It enables multi-hop communication between
+            devices that aren't directly connected, creating a robust mesh network.
+        </p>
+
+        <div class="info-block">
+            <h4>Key Protocol Components:</h4>
+            <ul>
+                <li><strong>E-RREQ (Enhanced Route Request)</strong>: Discovers routes to destinations</li>
+                <li><strong>E-RREP (Enhanced Route Reply)</strong>: Provides route information back to the source</li>
+                <li><strong>E-RERR (Enhanced Route Error)</strong>: Notifies of broken routes</li>
+                <li><strong>R-HELLO (Route Hello)</strong>: Announces presence and shares topology info</li>
+            </ul>
+        </div>
+
+        <p>
+            The key innovation in E-AODV is the enrichment of route discovery and hello messages with topology
+            information, allowing the network to build a comprehensive understanding of its structure and capabilities
+            with minimal overhead.
+        </p>
+    </div>
+
+    <div class="section">
+        <h2>Route Discovery Process</h2>
+        <p>
+            Route discovery in E-AODV follows a request-reply pattern. When a node needs to communicate with
+            another node for which it has no route, it initiates a route discovery process.
+        </p>
+
+        <div class="step-container">
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>E-RREQ Broadcast:</strong> Source node broadcasts an Enhanced Route Request (E-RREQ) to all neighbors.
+                As it propagates, each node adds its topology information to the <code>packet_topology</code> field.
+            </div>
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>E-RREQ Forwarding:</strong> Each intermediate node processes the E-RREQ, updates its routing
+                table with a route back to the source, and forwards the request to its neighbors if it doesn't have a route to the destination.
+            </div>
+            <div class="step">
+                <span class="step-number">3</span>
+                <strong>E-RREP Generation:</strong> When the E-RREQ reaches the destination (or a node with a route to
+                the destination), an Enhanced Route Reply (E-RREP) is generated and sent back along the discovered path.
+            </div>
+            <div class="step">
+                <span class="step-number">4</span>
+                <strong>E-RREP Processing:</strong> As the E-RREP travels back to the source, each intermediate node
+                updates its routing table with a route to the destination, effectively establishing a bidirectional path.
+            </div>
+        </div>
+
+        <h3>Visualizing Route Discovery</h3>
+
+        <div class="network-container" id="route-discovery-network">
+            <!-- Nodes -->
+            <div class="node source" id="node-a" style="top: 250px; left: 100px;">A</div>
+            <div class="node" id="node-b" style="top: 150px; left: 300px;">B</div>
+            <div class="node" id="node-c" style="top: 350px; left: 300px;">C</div>
+            <div class="node" id="node-d" style="top: 150px; left: 550px;">D</div>
+            <div class="node" id="node-e" style="top: 350px; left: 550px;">E</div>
+            <div class="node destination" id="node-f" style="top: 250px; left: 750px;">F</div>
+
+            <!-- Links will be created programmatically -->
+        </div>
+
+        <div class="control-panel">
+            <button id="start-route-discovery">Start Route Discovery</button>
+            <button id="reset-route-discovery">Reset</button>
+        </div>
+
+        <div class="packet-info" id="rreq-info">
+            <h4>E-RREQ Packet (from Node A to Node F)</h4>
+<pre>{
+  "type": 1,  // RequestType.E_RREQ.value
+  "source_id": "node-A",
+  "source_mac": "AA:BB:CC:DD:EE:01",
+  "destination_id": "node-F",
+  "destination_mac": "AA:BB:CC:DD:EE:06",
+  "broadcast_id": "abc123",
+  "sequence_number": 42,
+  "hop_count": 0,
+  "time_to_live": 10,
+  "timestamp": "1614878400.123",
+  "previous_hop_mac": "AA:BB:CC:DD:EE:01",
+  "packet_topology": [  // Enhanced feature that carries topology information
+    {
+      "node_id": "node-A",
+      "bt_mac_address": "AA:BB:CC:DD:EE:01",
+      "neighbors": ["AA:BB:CC:DD:EE:02", "AA:BB:CC:DD:EE:03"]
+    }
+  ]
+}</pre>
+        </div>
+
+        <div class="packet-info" id="rrep-info">
+            <h4>E-RREP Packet (from Node F to Node A)</h4>
+<pre>{
+  "type": 2,  // RequestType.E_RREP.value
+  "source_id": "node-F",
+  "source_mac": "AA:BB:CC:DD:EE:06",
+  "destination_id": "node-A",
+  "destination_mac": "AA:BB:CC:DD:EE:01",
+  "broadcast_id": "def456",
+  "original_request_id": "abc123",
+  "sequence_number": 42,
+  "hop_count": 0,
+  "timestamp": "1614878405.789",
+  "packet_topology": [  // Rich topology information accumulated during discovery
+    {
+      "node_id": "node-F",
+      "bt_mac_address": "AA:BB:CC:DD:EE:06",
+      "neighbors": ["AA:BB:CC:DD:EE:04", "AA:BB:CC:DD:EE:05"]
+    },
+    {
+      "node_id": "node-E",
+      "bt_mac_address": "AA:BB:CC:DD:EE:05",
+      "neighbors": ["AA:BB:CC:DD:EE:03", "AA:BB:CC:DD:EE:06"]
+    },
+    {
+      "node_id": "node-D",
+      "bt_mac_address": "AA:BB:CC:DD:EE:04",
+      "neighbors": ["AA:BB:CC:DD:EE:02", "AA:BB:CC:DD:EE:06"]
+    },
+    {
+      "node_id": "node-C",
+      "bt_mac_address": "AA:BB:CC:DD:EE:03",
+      "neighbors": ["AA:BB:CC:DD:EE:01", "AA:BB:CC:DD:EE:05"]
+    },
+    {
+      "node_id": "node-B",
+      "bt_mac_address": "AA:BB:CC:DD:EE:02",
+      "neighbors": ["AA:BB:CC:DD:EE:01", "AA:BB:CC:DD:EE:04"]
+    }
+  ]
+}</pre>
+        </div>
+
+        <div class="note">
+            <h4>Enhanced Topology Information</h4>
+            <p>
+                Unlike standard AODV, E-AODV's route discovery process builds comprehensive topology knowledge.
+                Each node adds its own information to the <code>packet_topology</code> field, allowing the
+                entire network to learn not just routes but the complete network structure through a single
+                route discovery process.
+            </p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>R-HELLO Messages & Topology Building</h2>
+        <p>
+            R-HELLO messages are a key innovation in E-AODV. They are periodically sent by each node to announce
+            its presence and share topology information. Unlike standard AODV hello messages that only serve
+            as link monitoring, R-HELLO messages act as powerful knowledge-sharing mechanisms.
+        </p>
+
+        <div class="info-block hello">
+            <h4>Information Shared in R-HELLO:</h4>
+            <ul>
+                <li><strong>Direct Neighbors:</strong> MAC addresses of directly connected nodes</li>
+                <li><strong>Routing Knowledge:</strong> Simplified versions of routes to distant nodes</li>
+                <li><strong>Node Capabilities:</strong> Available sensors, actuators, and services</li>
+                <li><strong>Sensor Data:</strong> Current readings from sensors (optional)</li>
+                <li><strong>Configuration:</strong> Network parameters like hello interval</li>
+            </ul>
+        </div>
+
+        <h3>Visualizing Topology Building with R-HELLO</h3>
+
+        <div class="network-container" id="hello-network">
+            <!-- Nodes -->
+            <div class="node" id="hello-node-a" style="top: 250px; left: 200px;">A</div>
+            <div class="node" id="hello-node-b" style="top: 150px; left: 500px;">B</div>
+            <div class="node" id="hello-node-c" style="top: 350px; left: 500px;">C</div>
+            <div class="node" id="hello-node-d" style="top: 250px; left: 800px;">D</div>
+
+            <!-- Links will be created programmatically -->
+        </div>
+
+        <div class="control-panel">
+            <button id="send-hello" class="hello">Send R-HELLO Messages</button>
+            <button id="reset-hello">Reset</button>
+        </div>
+
+        <div class="packet-info" id="hello-info">
+            <h4>R-HELLO Packet Example</h4>
+<pre>{
+  "type": 4,  // RequestType.R_HELLO.value
+  "node_id": "node-A",
+  "bt_mac_address": "AA:BB:CC:DD:EE:01",
+  "timestamp": "1614878600.789",
+  "initial_neighbors": ["AA:BB:CC:DD:EE:02", "AA:BB:CC:DD:EE:03"],
+  "routing_knowledge": [  // Shares known routes with neighbors
+    {
+      "destination": {
+        "node_id": "node-D",
+        "bt_mac_address": "AA:BB:CC:DD:EE:04",
+        "capabilities": {  // Capability information propagation
+          "temperature": true,
+          "led_writable": true
+        }
+      },
+      "hops": [
+        {
+          "node_id": "node-B",
+          "bt_mac_address": "AA:BB:CC:DD:EE:02",
+          "neighbors": ["AA:BB:CC:DD:EE:01", "AA:BB:CC:DD:EE:04"]
+        }
+      ],
+      "timestamp": "1614878590.123"
+    }
+  ],
+  "capabilities": {  // Node's own capabilities
+    "temperature": true,
+    "humidity": true,
+    "temperature_value": 23.5,
+    "led_writable": true
+  },
+  "include_sensor_data": true,
+  "hello_interval": 30
+}</pre>
+        </div>
+
+        <div class="note">
+            <h4>Progressive Topology Building</h4>
+            <p>
+                With R-HELLO messages, topology knowledge grows organically over time. Even without active
+                route discoveries, nodes gradually build a complete picture of the network through periodic
+                hello exchanges. This leads to fewer route discoveries and more efficient network operation.
+            </p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Complete Network Information Propagation</h2>
+        <p>
+            The most powerful aspect of E-AODV is how it efficiently propagates four types of information
+            throughout the network using the same message structure:
+        </p>
+
+        <div class="topology-grid">
+            <div class="topology-item">
+                <h4>Route Information</h4>
+                <p>Knowledge of multi-hop paths to distant nodes</p>
+                <p><strong>Primary Vehicle:</strong> E-RREQ/E-RREP</p>
+                <p><strong>Secondary Vehicle:</strong> R-HELLO</p>
+            </div>
+
+            <div class="topology-item">
+                <h4>Topology Information</h4>
+                <p>Network structure including node connectivity</p>
+                <p><strong>Primary Vehicle:</strong> packet_topology field</p>
+                <p><strong>Secondary Vehicle:</strong> initial_neighbors in R-HELLO</p>
+            </div>
+
+            <div class="topology-item">
+                <h4>Capability Information</h4>
+                <p>Services and capabilities available at each node</p>
+                <p><strong>Primary Vehicle:</strong> R-HELLO capabilities field</p>
+                <p><strong>Secondary Vehicle:</strong> E-RREQ/E-RREP capabilities in routing_knowledge</p>
+            </div>
+
+            <div class="topology-item">
+                <h4>Configuration Information</h4>
+                <p>Network-wide parameters</p>
+                <p><strong>Primary Vehicle:</strong> CONFIG operation type</p>
+                <p><strong>Secondary Vehicle:</strong> hello_interval in R-HELLO</p>
+            </div>
+        </div>
+
+        <h3>Comprehensive Network View Visualization</h3>
+
+        <div class="network-container" id="complete-network">
+            <!-- Will be populated dynamically -->
+        </div>
+
+        <div class="control-panel">
+            <button id="start-complete-visualization" class="discover">Complete Network Demonstration</button>
+            <button id="reset-complete">Reset</button>
+        </div>
+
+        <div class="note">
+            <h4>Key E-AODV Innovations</h4>
+            <p>
+                E-AODV's innovation is not just in the individual protocols, but in how they work together:
+            </p>
+            <ul>
+                <li><strong>Piggybacking:</strong> Multiple types of information travel in single messages</li>
+                <li><strong>Implicit Learning:</strong> Nodes learn about distant parts of the network without direct discovery</li>
+                <li><strong>Capability Awareness:</strong> The network builds knowledge of available services</li>
+                <li><strong>Resilient Routing:</strong> Multiple route options are discovered and maintained</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Function to animate packet along a line
+        function animatePacketAlongLine(fromX, fromY, toX, toY, packetType, containerId) {
+            // Create packet
+            const packet = document.createElement('div');
+            packet.className = 'packet ' + packetType;
+            packet.style.opacity = 1;
+
+            // Initial position
+            packet.style.left = (fromX - 9) + 'px';
+            packet.style.top = (fromY - 9) + 'px';
+
+            // Append to container
+            document.getElementById(containerId).appendChild(packet);
+
+            // Calculate duration based on distance
+            const distance = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
+            const duration = Math.min(Math.max(distance / 300, 0.5), 1.5); // 0.5 to 1.5 seconds based on distance
+
+            // Calculate multiple points along the line
+            const steps = 20;
+            const points = [];
+
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                points.push({
+                    x: fromX + (toX - fromX) * t,
+                    y: fromY + (toY - fromY) * t
+                });
+            }
+
+            // Animate through points
+            let step = 0;
+            const interval = duration * 1000 / steps;
+
+            const animation = setInterval(() => {
+                if (step >= points.length) {
+                    clearInterval(animation);
+                    packet.classList.add('packet-animation');
+
+                    // Remove packet after animation
+                    setTimeout(() => {
+                        packet.remove();
+                    }, 3000);
+
+                    return;
+                }
+
+                packet.style.left = (points[step].x - 9) + 'px';
+                packet.style.top = (points[step].y - 9) + 'px';
+
+                step++;
+            }, interval);
+        }
+
+        // Function for creating links between nodes
+        function createLink(fromId, toId, containerId, initialOpacity = 1) {
+            const fromNode = document.getElementById(fromId);
+            const toNode = document.getElementById(toId);
+            const container = document.getElementById(containerId);
+
+            const linkElement = document.createElement('div');
+            linkElement.className = 'link';
+            linkElement.id = 'link-' + fromId + '-' + toId;
+
+            // Get node dimensions
+            const nodeWidth = 60; // Width of node
+            const nodeRadius = nodeWidth / 2;
+
+            // Calculate center points
+            const fromX = fromNode.offsetLeft + nodeRadius;
+            const fromY = fromNode.offsetTop + nodeRadius;
+            const toX = toNode.offsetLeft + nodeRadius;
+            const toY = toNode.offsetTop + nodeRadius;
+
+            // Calculate length and angle
+            const dx = toX - fromX;
+            const dy = toY - fromY;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+            // Position link
+            linkElement.style.width = length + 'px';
+            linkElement.style.left = fromX + 'px';
+            linkElement.style.top = fromY + 'px';
+            linkElement.style.transformOrigin = '0 0';
+            linkElement.style.transform = 'rotate(' + angle + 'deg)';
+            linkElement.style.opacity = initialOpacity;
+
+            container.appendChild(linkElement);
+            return linkElement;
+        }
+
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Create links for route-discovery-network
+            const routeLinks = [
+                { from: 'node-a', to: 'node-b' },
+                { from: 'node-a', to: 'node-c' },
+                { from: 'node-b', to: 'node-d' },
+                { from: 'node-c', to: 'node-e' },
+                { from: 'node-d', to: 'node-f' },
+                { from: 'node-e', to: 'node-f' }
+            ];
+
+            routeLinks.forEach(link => {
+                createLink(link.from, link.to, 'route-discovery-network');
+            });
+
+            // Create links for hello-network
+            const helloLinks = [
+                { from: 'hello-node-a', to: 'hello-node-b' },
+                { from: 'hello-node-a', to: 'hello-node-c' },
+                { from: 'hello-node-b', to: 'hello-node-d' },
+                { from: 'hello-node-c', to: 'hello-node-d' }
+            ];
+
+            helloLinks.forEach(link => {
+                createLink(link.from, link.to, 'hello-network', 0); // Initial opacity 0
+            });
+
+            // Create complete network
+            const completeNetwork = document.getElementById('complete-network');
+
+            // Create a more complex network
+            const nodes = [
+                { id: 'complete-a', label: 'A', x: 150, y: 250, nodeType: 'source' },
+                { id: 'complete-b', label: 'B', x: 300, y: 150 },
+                { id: 'complete-c', label: 'C', x: 300, y: 350 },
+                { id: 'complete-d', label: 'D', x: 450, y: 100 },
+                { id: 'complete-e', label: 'E', x: 450, y: 200 },
+                { id: 'complete-f', label: 'F', x: 450, y: 300 },
+                { id: 'complete-g', label: 'G', x: 450, y: 400 },
+                { id: 'complete-h', label: 'H', x: 600, y: 150 },
+                { id: 'complete-i', label: 'I', x: 600, y: 350 },
+                { id: 'complete-j', label: 'J', x: 750, y: 250, nodeType: 'destination' }
+            ];
+
+            const links = [
+                { from: 'complete-a', to: 'complete-b' },
+                { from: 'complete-a', to: 'complete-c' },
+                { from: 'complete-b', to: 'complete-d' },
+                { from: 'complete-b', to: 'complete-e' },
+                { from: 'complete-c', to: 'complete-f' },
+                { from: 'complete-c', to: 'complete-g' },
+                { from: 'complete-d', to: 'complete-h' },
+                { from: 'complete-e', to: 'complete-h' },
+                { from: 'complete-f', to: 'complete-i' },
+                { from: 'complete-g', to: 'complete-i' },
+                { from: 'complete-h', to: 'complete-j' },
+                { from: 'complete-i', to: 'complete-j' }
+            ];
+
+            // Create nodes
+            nodes.forEach(node => {
+                const nodeElement = document.createElement('div');
+                nodeElement.id = node.id;
+                nodeElement.className = 'node' + (node.nodeType ? ' ' + node.nodeType : '');
+                nodeElement.style.left = node.x + 'px';
+                nodeElement.style.top = node.y + 'px';
+                nodeElement.textContent = node.label;
+                completeNetwork.appendChild(nodeElement);
+            });
+
+            // Create links
+            links.forEach(link => {
+                createLink(link.from, link.to, 'complete-network');
+            });
+
+            // Route Discovery Animation
+            document.getElementById('start-route-discovery').addEventListener('click', function() {
+                // Remove existing packets
+                document.querySelectorAll('#route-discovery-network .packet').forEach(packet => packet.remove());
+
+                // RREQ phase - from A to F
+                let rreqSequence = [
+                    { from: 'node-a', to: 'node-b', delay: 0 },
+                    { from: 'node-a', to: 'node-c', delay: 100 },
+                    { from: 'node-b', to: 'node-d', delay: 1000 },
+                    { from: 'node-c', to: 'node-e', delay: 1100 },
+                    { from: 'node-d', to: 'node-f', delay: 2000 },
+                    { from: 'node-e', to: 'node-f', delay: 2100 }
+                ];
+
+                // Animate RREQ packets
+                rreqSequence.forEach(step => {
+                    setTimeout(() => {
+                        const fromNode = document.getElementById(step.from);
+                        const toNode = document.getElementById(step.to);
+
+                        // Get positions
+                        const fromX = fromNode.offsetLeft + 30;
+                        const fromY = fromNode.offsetTop + 30;
+                        const toX = toNode.offsetLeft + 30;
+                        const toY = toNode.offsetTop + 30;
+
+                        // Animate packet along the line
+                        animatePacketAlongLine(fromX, fromY, toX, toY, 'rreq', 'route-discovery-network');
+                    }, step.delay);
+                });
+
+                // RREP phase - from F to A
+                let rrepSequence = [
+                    { from: 'node-f', to: 'node-d', delay: 3000 },
+                    { from: 'node-f', to: 'node-e', delay: 3100 },
+                    { from: 'node-d', to: 'node-b', delay: 4000 },
+                    { from: 'node-e', to: 'node-c', delay: 4100 },
+                    { from: 'node-b', to: 'node-a', delay: 5000 },
+                    { from: 'node-c', to: 'node-a', delay: 5100 }
+                ];
+
+                // Animate RREP packets
+                rrepSequence.forEach(step => {
+                    setTimeout(() => {
+                        const fromNode = document.getElementById(step.from);
+                        const toNode = document.getElementById(step.to);
+
+                        // Get positions
+                        const fromX = fromNode.offsetLeft + 30;
+                        const fromY = fromNode.offsetTop + 30;
+                        const toX = toNode.offsetLeft + 30;
+                        const toY = toNode.offsetTop + 30;
+
+                        // Animate packet along the line
+                        animatePacketAlongLine(fromX, fromY, toX, toY, 'rrep', 'route-discovery-network');
+                    }, step.delay);
+                });
+            });
+
+            document.getElementById('reset-route-discovery').addEventListener('click', function() {
+                document.querySelectorAll('#route-discovery-network .packet').forEach(packet => packet.remove());
+            });
+
+            // Hello Message Animation
+            document.getElementById('send-hello').addEventListener('click', function() {
+                // Remove existing packets
+                document.querySelectorAll('#hello-network .packet').forEach(packet => packet.remove());
+
+                // Make all links visible
+                document.querySelectorAll('#hello-network .link').forEach(link => {
+                    link.style.opacity = '1';
+                    link.classList.add('connect-animation');
+                });
+
+                // Send hello messages from each node
+                const nodes = ['hello-node-a', 'hello-node-b', 'hello-node-c', 'hello-node-d'];
+                const connections = {
+                    'hello-node-a': ['hello-node-b', 'hello-node-c'],
+                    'hello-node-b': ['hello-node-a', 'hello-node-d'],
+                    'hello-node-c': ['hello-node-a', 'hello-node-d'],
+                    'hello-node-d': ['hello-node-b', 'hello-node-c']
+                };
+
+                // Send hello messages in sequence
+                nodes.forEach((fromNodeId, index) => {
+                    setTimeout(() => {
+                        const fromNode = document.getElementById(fromNodeId);
+
+                        // Send to all connected nodes
+                        connections[fromNodeId].forEach((toNodeId, subIndex) => {
+                            const toNode = document.getElementById(toNodeId);
+
+                            // Get positions
+                            const fromX = fromNode.offsetLeft + 30;
+                            const fromY = fromNode.offsetTop + 30;
+                            const toX = toNode.offsetLeft + 30;
+                            const toY = toNode.offsetTop + 30;
+
+                            // Animate packet along the line
+                            animatePacketAlongLine(fromX, fromY, toX, toY, 'hello', 'hello-network');
+                        });
+
+                        // Highlight the node to show it's sharing topology info
+                        fromNode.classList.add('topology-animation');
+                        setTimeout(() => {
+                            fromNode.classList.remove('topology-animation');
+                        }, 2000);
+
+                    }, index * 1500);
+                });
+            });
+
+            document.getElementById('reset-hello').addEventListener('click', function() {
+                document.querySelectorAll('#hello-network .packet').forEach(packet => packet.remove());
+                document.querySelectorAll('#hello-network .link').forEach(link => {
+                    link.style.opacity = '0';
+                    link.classList.remove('connect-animation');
+                });
+                document.querySelectorAll('#hello-network .node').forEach(node => {
+                    node.classList.remove('topology-animation');
+                });
+            });
+
+            // Helper function to send a packet between nodes
+            function sendPacket(fromId, toId, packetType) {
+                const fromNode = document.getElementById(fromId);
+                const toNode = document.getElementById(toId);
+                const containerId = 'complete-network';
+
+                // Get positions
+                const fromX = fromNode.offsetLeft + 30;
+                const fromY = fromNode.offsetTop + 30;
+                const toX = toNode.offsetLeft + 30;
+                const toY = toNode.offsetTop + 30;
+
+                // Create packet with animation
+                animatePacketAlongLine(fromX, fromY, toX, toY, packetType, containerId);
+            }
+
+            // Add complete visualization button functionality
+            document.getElementById('start-complete-visualization').addEventListener('click', function() {
+                // Remove any existing packets
+                document.querySelectorAll('#complete-network .packet').forEach(packet => packet.remove());
+
+                // Phase 1: R-HELLO exchange
+                setTimeout(() => {
+                    sendHelloMessages();
+                }, 500);
+
+                // Phase 2: Route Discovery
+                setTimeout(() => {
+                    initiateRouteDiscovery();
+                }, 3500);
+
+                // Phase 3: Topology building
+                setTimeout(() => {
+                    buildNetworkTopology();
+                }, 8000);
+            });
+
+            // Send HELLO messages between directly connected nodes
+            function sendHelloMessages() {
+                links.forEach((link, index) => {
+                    setTimeout(() => {
+                        sendPacket(link.from, link.to, 'hello');
+                        sendPacket(link.to, link.from, 'hello');
+                    }, index * 200);
+                });
+            }
+
+            // Perform route discovery from A to J
+            function initiateRouteDiscovery() {
+                // Define the paths for RREQ
+                const rreqPaths = [
+                    ['complete-a', 'complete-b'],
+                    ['complete-a', 'complete-c'],
+                    ['complete-b', 'complete-d'],
+                    ['complete-b', 'complete-e'],
+                    ['complete-c', 'complete-f'],
+                    ['complete-c', 'complete-g'],
+                    ['complete-d', 'complete-h'],
+                    ['complete-e', 'complete-h'],
+                    ['complete-f', 'complete-i'],
+                    ['complete-g', 'complete-i'],
+                    ['complete-h', 'complete-j'],
+                    ['complete-i', 'complete-j']
+                ];
+
+                // Send RREQ packets
+                rreqPaths.forEach((path, index) => {
+                    setTimeout(() => {
+                        sendPacket(path[0], path[1], 'rreq');
+                    }, index * 300);
+                });
+
+                // Define the path for RREP (assuming route through B-E-H-J is chosen)
+                const rrepPath = [
+                    ['complete-j', 'complete-h'],
+                    ['complete-h', 'complete-e'],
+                    ['complete-e', 'complete-b'],
+                    ['complete-b', 'complete-a']
+                ];
+
+                // Send RREP packets after RREQ phase
+                setTimeout(() => {
+                    rrepPath.forEach((path, index) => {
+                        setTimeout(() => {
+                            sendPacket(path[0], path[1], 'rrep');
+                        }, index * 400);
+                    });
+                }, rreqPaths.length * 300 + 500);
+            }
+
+            // Simulate topology building across the network
+            function buildNetworkTopology() {
+                nodes.forEach((node, index) => {
+                    setTimeout(() => {
+                        const nodeElement = document.getElementById(node.id);
+                        nodeElement.classList.add('topology-animation');
+                        setTimeout(() => {
+                            nodeElement.classList.remove('topology-animation');
+                        }, 1500);
+                    }, index * 300);
+                });
+            }
+
+            document.getElementById('reset-complete').addEventListener('click', function() {
+                document.querySelectorAll('#complete-network .packet').forEach(packet => packet.remove());
+                document.querySelectorAll('#complete-network .node').forEach(node => {
+                    node.classList.remove('topology-animation');
+                });
+            });
+        });
+    </script>
+</body>
+</html>
