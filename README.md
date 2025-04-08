@@ -1,4 +1,4 @@
-# EAODV: Enhanced AODV Routing over Bluetooth
+# EAODV: Topology Aware AODV Routing over Bluetooth
 
 ## Overview
 
